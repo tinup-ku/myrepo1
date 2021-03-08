@@ -21,15 +21,18 @@ for i in out:
   print "line: " + i
 
   ===================
+  another way: ( redirect stderr to stdout )
+  #!/usr/bin/python
 
-another way: ( redirect stderr to stdout )
 import subprocess
 
-proc = subprocess.Popen(['ping', '-w', '1', 'www.amazon.com'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+cert="xyz"
+cmd="/usr/bin/ssh -q mydevserver puppet cert clean " + cert
+proc = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 tmp = proc.stdout.read()
 print tmp
 
-  ====================
+  ========================
 
 # If the result of the command are not needed 
 import os
