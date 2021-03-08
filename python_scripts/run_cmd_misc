@@ -1,0 +1,49 @@
+
+#To return the result of a command
+#!/usr/bin/python
+import os
+f = os.popen('date')
+now = f.read()
+print "Today is ", now
+ ================
+
+ or simply:
+
+import os
+out = os.popen('date').read()
+
+ ====================
+parse the command output line by line:
+f=os.popen('ping -w 1 www.amazon.com')
+out=f.read()
+out = out.split("\n")
+for i in out:
+  print "line: " + i
+
+  ===================
+
+another way: ( redirect stderr to stdout )
+import subprocess
+
+proc = subprocess.Popen(['ping', '-w', '1', 'www.amazon.com'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+tmp = proc.stdout.read()
+print tmp
+
+  ====================
+
+# If the result of the command are not needed 
+import os
+cmd = 'ls -al'
+os.system(cmd)
+
+=================
+Another way:
+      cmd2 = "/opt/OV/bin/OpC/utils/opcpolicy -download pol_group=" + line + " dir=" + dir_name
+      for line1 in os.popen(cmd2):
+        print (line1.rstrip())     # strip return
+      print ("")                   # insert a new line
+
+==================
+
+
+
