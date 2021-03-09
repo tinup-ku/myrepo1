@@ -1,34 +1,51 @@
 #!/usr/bin/python
 
-# create a file , run a loop to wait if a file.out file is created by another process
-# if file.out is created then exit otherwise wait in loop
+# Run this script in cron every minute ; it exit if running more than once
+# check if file <name>.act is present if yes then clean cert , save the output in <name>.out
 # remove <name>.act
 
 import os
+import subprocess
 import time
 
-first_name1="my"
-newfile="/var/tmp/" + first_name1 + ".act"
-f=open(newfile,"w+")
-f.write("test")
-f.close()
+# check if already running /usr/bin/python ./cert_clean.py  exit if it is
+cmd = ['ps -ef | grep cert_clean | grep -v grep | wc -l']
+process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+p_out, p_err=process.communicate()
 
-execfile("t.py")
+if int(p_out) >= 2 :
+  print("Running Already..exiting")
+  exit()
 
-outfile= "/var/tmp/" + first_name1 + ".out"
-n=0
-while n < 10 :
-   if os.path.exists(outfile):
-     cont = open(outfile, "r")
-     print "Found outfile:"
-     for line in cont:
-       print(line)
-     os.remove(outfile)
-     break
-   else:
-     time.sleep(1)
-     n=n+1
-     #continue
 
-os.remove(newfile)
+while True:
+
+  workdir="/temp"
+  os.system('find /temp -mmin +59 -type f -exec rm -fv {} \;')
+  mylist = os.listdir(workdir)
+  item1=""
+
+  for i in mylist:
+    #print i
+    if ".act" in i:
+      print "working: " + i
+      #print i
+      x = i.split(".act")
+      item1=x[0]
+
+      outfile= workdir + "/" + item1 + ".out"
+      if os.path.exists(outfile):
+        os.remove(outfile)
+      cmd="/usr/bin/ssh -q puppet_server_name puppet cert clean " + item1
+      proc = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      output = proc.stdout.read()
+
+      f=open(outfile,"w+")
+      f.write(output)
+      f.close()
+      cmd1="chmod 777 " + outfile
+      os.system(cmd1)
+      act_file=workdir + "/" + i
+      os.remove(act_file)
+      time.sleep(2)
 
