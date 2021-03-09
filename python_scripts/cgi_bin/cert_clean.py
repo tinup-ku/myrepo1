@@ -17,10 +17,11 @@ if int(p_out) >= 2 :
   print("Running Already..exiting")
   exit()
 
-
+# looping below
 while True:
 
   workdir="/temp"
+  #remove files older then 59 minutes
   os.system('find /temp -mmin +59 -type f -exec rm -fv {} \;')
   mylist = os.listdir(workdir)
   item1=""
