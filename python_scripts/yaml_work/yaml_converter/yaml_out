@@ -1,0 +1,48 @@
+usrprint(string):
+  _string      = string
+  string_parts = _string.split(',')
+  usr_name     =  string_parts[0].replace(" ", "")
+  usr_name_fmt = _2q + usr_name + _q + ":"
+  usr_uid      = string_parts[1].replace(" ", "")
+  usr_gid      = string_parts[2].replace(" ", "")
+  usr_hom      = string_parts[3].replace(" ", "")
+  usr_shl      = string_parts[4].replace(" ", "")
+  usr_uid_fmt  = _4 + 'uid' + ":" + _s + _q + usr_uid + _q
+  usr_gid_fmt  = _4 + 'gid' + ":" + _s + _q + usr_gid + _q
+  usr_hom_fmt  = _4 + 'home' + ":" + _s + _q + usr_hom + _q
+  usr_shl_fmt  = _4 + 'shell' + ":" + _s + _q + usr_shl + _q
+  print usr_name_fmt
+  print _ep
+  print usr_uid_fmt
+  print usr_gid_fmt
+  print usr_hom_fmt
+  print usr_shl_fmt
+  print _ro 
+
+
+
+Sent from Yahoo Mail for users:
+  - "users,UID,GID,HomeDir,shell"
+  - "daemon,2,2,/sbin,/sbin/nologin"
+  - "lp,4,7,/var/spool/lpd,/sbin/nologin"
+  - "sync,5,0,/sbin,/bin/sync"
+
+with open(_file, 'r') as _f:
+  doc         = yaml.load(_f)
+
+  if 'groups' in doc:
+    list_groups = doc["groups"]
+  if 'users' in doc:
+    list_users  = doc["users"]
+
+    print "users:"
+
+
+   for _string in list_users:
+      _makeusr = _string.split(',')[0].replace('"', '').replace(' ', '')
+
+   if _makeusr in _bad_users:
+          pass
+
+        usrprint(_string)
+

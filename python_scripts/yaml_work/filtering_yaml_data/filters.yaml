@@ -1,0 +1,7 @@
+"packages":
+  "httpd":
+"files":
+  "/var/tmp/test":
+"users":
+  "tomcat":
+

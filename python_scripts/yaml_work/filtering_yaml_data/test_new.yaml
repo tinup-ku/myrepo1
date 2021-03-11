@@ -1,0 +1,34 @@
+"packages":
+#  "httpd":
+#    ensure: "installed"
+#    readonly: false
+  "libassuan":
+    ensure: "installed"
+    readonly: false
+  "python2-jmespath":
+    ensure: "installed"
+    readonly: false
+  "satyr":
+    ensure: "installed"
+    readonly: false
+  "libverto-tevent":
+    ensure: "installed"
+    readonly: false
+  "python2-jmispath":
+    ensure: "installed"
+    readonly: false
+  "lm_sensors-libs":
+    ensure: "installed"
+    readonly: false
+"files":
+  "/var/tmp/test1":
+    template: new
+    ensure: "present"
+    readonly: false
+#  "/var/tmp/test":
+#    ensure: "present"
+#    readonly: false
+"users":
+#  "tomcat":
+#    ensure: "present"
+#    readonly: false
