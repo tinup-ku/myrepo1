@@ -78,5 +78,5 @@ print "<h3>%s</h3>" % msg
 #print "<h3>%s</h3>" % msg2
 for line in out:
   print line
-  print "<be>"
+  print "<br>"
 print "</body>"
