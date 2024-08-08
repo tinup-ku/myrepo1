@@ -1,0 +1,309 @@
+
+   ===============
+Warning: Do not deploy authentication.conf since it is having hashed password and it will lock the service account.
+    ===============
+Install:
+Setup disk/create splunkvg ( use part from run_splunk_initial_setup )
+Setup kernel param ( use part from  run_splunk_initial_setup )
+Instal extra packages ( use part from  run_splunk_initial_setup )
+First copy /.splunk to new servers otherwise user-seed for admin account will not work
+Install splunk / convert to service account - check below:
+   mount nas30u0dev.dev.cname.com:/infra/softdepot /mnt
+   /mnt/Splunk/install_splunk.systemD -v 9.1.3 ; umount /mnt
+   jldsh -eg New_RHEL9_All_TEST_Indexers -s ./Convert_Splunk_to_svcacct  ( from jump server )
+Add license manager to server.conf
+Custom config/scripts to copy from two dirs: /usr/local/bin and /opt/splunk/etc/system/local
+For Venafi certs, configure certs here: /opt/splunk/etc/system/local/web.conf 
+             certs are copied here: /opt/splunk/etc/auth/splunkweb 
+( Copy over from other servers initially unless pushed from Venafi ) 
+    ===============
+
+copy files to /opt/splunk/etc/system/local ( inputs.conf outputs.conf web.conf )
+validate web.conf for certs are present on the server.
+copy utils to /usr/local/bin
+     ======================
+First setup as standalone SH - Update site from general stanza and whole clustering stanza ( convert pass4SymmKey to text )
+[general]
+serverName = sname4344dom1
+pass4SymmKey = $7$WVy1Q082iAO6ObblXNu3cNz84Z8UDhiWuUCviZPfcaFI+vbF52qK8g==
+site = site0
+
+[clustering]
+master_uri = https://sname0979dom1.dom1.cname.com:8089
+mode = searchhead
+multisite = true
+pass4SymmKey = $7$rYiIjYA1YtvTYcA7H0GYADe8Y40bJVZpk2CiqCyGwbWPrH8BMgPvXc07uTtUNw==
+
+bash-4.2$ /opt/splunk/bin/splunk show-decrypted --value '$7$PmPhnPSjC/2qCYlXLV+9PQdvv1WaZEJG6BmCXaX5mJ2yJINhNNHTSZgNIfQhuA=='
+weblog_cluster
+
+
+  =================
+Copy authentication.conf from other server after updating the password for bind
+chown svc.eli_admin.dev:unx_9998_access authentication.conf
+stop_splunk; start_splunk and make sure passwd is hashed
+login to UI using first.last
+For authentication.conf updates check files at jump server
+dev:root@sname2-008140 ~/CHANGE_LDAP_PASSWD/DEV/STAGE_ADMIN -> pwd
+/root/CHANGE_LDAP_PASSWD/DEV/STAGE_ADMIN
+
+For authentication.conf
+bash-4.4$ /opt/splunk/bin/splunk show-decrypted --value '$7$0PD2KqmpLMy+qNNJ59FYi+XANpAjYS1Cuwor9qdy/LsADAOlkMei7MWE9v/3Cd5L'
+
+   =====================
+Add SH to SH cluster:
+On new Search head:
+check this file exist: ls -ltr /.splunk
+Update ./initialize_DEV_QA_SH for prod it may be different
+copy /usr/local/bin/initialize_DEV_QA_SH from other server./initialize_DEV_QA_SH
+su - svc.eli_admin.dev and run  ./initialize_DEV_QA_SH
+show_kvstore
+stop_splunk
+start_splunk
+show_kvstore
+show_shcluster-status
+
+somewhere here validate that 00 apps are deployed to SH , Sh pull them over from deployer
+00-CORE-SH
+00-SH
+
+On captain:
+Add new member
+su - svc.eli_admin.dev
+/opt/splunk/bin/splunk add shcluster-member -new_member_uri https://sname1c-004635.csdev.corp:8089 -auth admin:d3V@dm1nuS3R
+
+as root validate:
+show_shcluster-status
+show_kvstore
+show_kvstore-status
+
+
+   ========== 
+
+Add to cluster: ( example for dev-restapi )
+
+On New search head:
+as service account
+bash-5.1$ uname -n
+sname2c-005090
+bash-5.1$ initialize_DEV_QA_SH
+Initializing Search Head sname2c-005090 as new search peer in SHC
+Is it in [D]EV, or [Q]A, Search Head Cluster? d
+Below are SHC F5 in DEV:
+------------------------------------
+1. splunk-dev.dev.cname.com
+2. splunk-restapi-dev.dev.cname.com
+3. splunk-lab.dev.cname.com
+4. splunktest.dev.cname.com
+------------------------------------
+Enter numeric value represents SH Cluster to initialize? 2
+Identifying SHC captain from F5 splunk-restapi-dev.dev.cname.com
+SHC captain=sname1-014829
+
+Initializing sname2c-005090 in  splunk-restapi-dev.dev.cname.com
+Search head clustering has been initialized on this node.
+You need to restart the Splunk Server (splunkd) for your changes to take effect.
+
+Add the followings to /opt/splunk/etc/system/local/server.conf [shclustering] stanza:
+conf_replication_include.authentication = false
+
+Now restarting splunk check kvstore via: /opt/splunk/bin/splunk show kvstore-status as svc.eli_admin.dev
+Once splunk restarted on sname2c-005090, run `show_kvstore` as root
+Verify kvstore status as shown below before adding to SHC via captain sname1-014829
+
+port:8191
+status:starting
+
+Next step, as svc.eli_admin.dev on splunk-restapi-dev.dev.cname.com Search Head captain, sname1-014829, run
+/opt/splunk/bin/splunk add shcluster-member -new_member_uri https://sname2c-005090.csdev.corp:8089 -auth admin:d3V@dm1nuS3R
+
+OUTPUT: /svc.eli_admin.dev/initialize_DEV_QA_SH.Fri1446_07122024.OUT
+bash-5.1$
+
+
+   ===
+Now Open another putty on new SH and run below:
+[root@sname2c-005090 ~]# show_kvstore
+------------------------
+replicationStatus:KVstorecaptain
+status:ready
+
+Above means server sname2c-005090 is standalone captain.
+Do a splunk_stop and splunk_start
+Check kvstore again
+[root@sname2c-005090 ~]# show_kvstore
+------------------------
+port:8191
+status:starting
+
+Once it is showing as "starting" Now Add the SH to cluster on the captain: 
+[root@sname1-014829 tmp]# su - svc.eli_admin.dev
+Last login: Fri Jul 12 14:35:24 EDT 2024
+$ bash
+bash-4.4$ uname -n
+sname1-014829
+bash-4.4$ /opt/splunk/bin/splunk add shcluster-member -new_member_uri https://sname2c-005090.csdev.corp:8089 -auth admin:d3V@dm1nuS3R
+WARNING: Server Certificate Hostname Validation is disabled. Please see server.conf/[sslConfig]/cliVerifyServerName for details.
+New member was successfully added.
+
+Now on new SH , kvstore will show as:
+[root@sname2c-005091 ~]# show_kvstore
+------------------------
+replicationStatus:InitialSync
+status:starting
+
+and finally
+[root@sname2c-005091 ~]# show_kvstore
+------------------------
+replicationStatus:Non-captainKVstoremember
+status:ready
+
+
+
+Validation:
+On new SH, 
+[root@sname2c-005091 ~]# show_kvstore
+------------------------
+replicationStatus:Non-captainKVstoremember
+status:ready
+
+
+Below app should show up:
+[root@sname2c-005090 apps]# cd /opt/splunk/etc/apps/ ; ls -ltr | grep 00-
+drwx------  6 svc.eli_admin.dev unx_9998_access 4096 Jul 12 14:49 00-CORE-SH
+drwx------  5 svc.eli_admin.dev unx_9998_access 4096 Jul 12 14:49 00-SH
+
+[root@sname2c-005090 apps]# show_shcluster-status |grep sname2c-005090 | grep label
+                                         label : sname2c-005090
+
+On captain:
+[root@sname1-014829 tmp]#  show_shcluster-status |grep sname2c-005090 | grep label
+                                         label : sname2c-005090
+
+     ====
+
+Issues: Running initialize_DEV_QA_SH it was failing as it can't get the captain, servers were disabled in F5 pools
+        Enabled and all worked fine
+
+   ==============================
+
+How to validate if AD authentication is working from SH:
+  run the script: 
+   root@sname0966dom1 /usr/local/bin -> ls validate_SH_AD_authentication
+validate_SH_AD_authentication
+    ===================
+How to check if Admin password is updated using ( user-seed.conf ):
+    su to service account and run: splunk login -auth admin:<passwd>
+   ====================
+Weblog SH cluster install:
+
+Install steps:
+Look here: root@sname0966dom1 ~/work_pkm/install_work/install_SH_weblogs 
+
+     ==================
+check this doc also if still valid for adding SH to cluster:
+how to add search head to a cluster
+  https://confluence.cname.com/display/SDM/How+to+Add+Search+Head+to+Search+Head+Cluster
+
+     ==================
+use Implement_new_SH.dom4 
+working on - Implement_new_SH.dom4 and reached to step to install splunk rpm = cpntinue from there
+nest step: Start here
+echo "Creating ${SPLUNK_HOME}/etc/system/local/user-seed.conf"
+
+Look at below servers/scripts for SH install weblogs
+ 5005  04/19/2023 - 10:23:35 cd scripts/
+ 5011  04/19/2023 - 10:25:20 view Implement_new_SH
+ 5012  04/19/2023 - 10:28:01 cd /mnt/Splunk/
+ 5014  04/19/2023 - 10:28:19 view install_splunk.systemD
+ 5019  04/19/2023 - 10:30:45 view Convert_Splunk_to_svcacct
+
+   =========
+Firewall:
+8089 to CM ( pri and secondary )
+9990 to Indexer ( all )
+8089 to LM ( sname0966dom1 )
+From Search Head to SH Cluster Deployer port 8089
+
+Among all SH: 8089 , 9886, 8191
+SH replication - 9886 ( until cluster is up ) birectional 
+KVStore 8191 ( among all SHs )
+
+      ================
+JIRA:
+https://jira.cname.com/browse/TOS-16468
+
+Work with Kumar, Punit on tasks below
+1. In sname0966dom1's $CLUSTER, identify 5 physical Dell 730xd (3 PDC1 and 2 PDC3). Also update https://confluence.cname.com/pages/viewpage.action?spaceKey=TOS&title=List+of+Splunk+Servers
+2. Clean up all virtual disks associated w/ Splunk Hot/Cold
+3. Remove/reinstall splunk
+4. Verify THP, kernel settings (ulimit -a)
+5. Submit MyIT to add new servers to F5 https://splunk-extracts.cname.com
+6.
+6a. Create Venafi devices, update ${SPLUNK_LOCAL}/web.conf
+6b. Verify TCP ports: 8089, 8191,9886,8000 among SH peers, Indexers, and Mngt nodes (CM, Deployer, LM)
+7. Initialize new SH then add to SH cluster.
+8. Testing via splunk search and restAPI call.
+
+Refer to sname0966dom1:/root/scripts/Implement_new_SH.dom4 for kernel settings +THP
+Next, clean up splunk Hot+Cold, remove/install splunk v8.2.1
+Kumar, Punit F5 MyIT request, https://myit.cname.com/dwp/app/#/checkout/4219 : MyIT#1904694 created.
+
+     =====================
+
+1. Deploy LM on all new weblog SHs: All_New_Weblogs_SH
+On sname0966dom1:/root/scripts
+jldsh -eg All_New_Weblogs_SH -s ./add_license
+2. Add remain SH devices to Venafi then update ${SPLUNK_LOCAL}/web.conf
+Note: Refer to attached Venafi_Restructure xcel
+3. On existing WebLog SH, sname4344dom1's
+3.1 ${SPLUNK_LOCAL}, port over to All_New_Weblogs_SH :
+outputs.conf
+limits.conf
+migration.conf
+web.conf
+authorize.conf
+authentication.conf
+3.2 In /usr/local/bin, port all splunk to new SHs:/usr/local/bin
+4.  On sname0966dom1, copy /root/scripts/initialize_SH to All_New_Weblogs_SH's ${LOCAL_BIN}
+5.  Copy sname0966dom1's /.splunk to All_New_Weblogs_SH's /.splunk
+6.  Verify GUI login on all as AD first.last
+7.  Initialize each new SH via 4.
+8.  Add new SH to SH cluster via sname0966dom1:/root/scripts/add_SH_to_SH_Cluster
+9.  Verify new SH added to cluster.
+10. Verify RB F5 splunk-extracts.cname.com w/ new SHs are in enabled state
+
+   =================
+
+Issues: Below didn't work:
+   Verify GUI login on all as AD first.last 
+solution: update the authentication.conf with Bindpass... and restart ( password is for service accout )
+
+Update admin password:
+on jump server:
+root@sname0966dom1 ~/scripts -> jldsh -ew s0668bdc -s create_user-seed.conf
+s0668bdc: Creating /opt/splunk/etc/system/local/user-seed.conf
+
+On the host:
+   [root@s0668bdc bin]# cat /opt/splunk/etc/system/local/user-seed.conf
+   restart splunk:
+
+     ========================
+
+jldsh -eg splunk_preprod_SH_cluster "show_shcluster-status|egrep 'label|status'"|dshbak
+jldsh -eg All_New_dom4_SH  "su - svc.eli_admin.prod \"/opt/splunk/bin/splunk login -auth admin:${key}\""
+
+   ==================
+FInd Adhoc seach heads:
+jldsh -eg All_splunk_multisite_SH "cd /opt/splunk/etc/system/local;grep '^adhoc_searchhead' server.conf"
+need to run that above query for one day or add earliest=-1d@d latest=1d to the query to get counts for one day
+
+   =================
+
+
+root@sname0966dom1 ~ -> jldsh -eg New_RHEL9_Argus_SH "mount nas30u0dev.dev.cname.com:/infra/softdepot /mnt"
+root@sname0966dom1 ~ -> jldsh -eg New_RHEL9_Argus_SH "/mnt/Splunk/install_splunk.systemD -v 9.1.3 ; umount /mnt"
+root@sname0966dom1 ~/scripts -> jldsh -eg New_RHEL9_Argus_SH -s ./Convert_Splunk_to_svcacct
+
+
+
