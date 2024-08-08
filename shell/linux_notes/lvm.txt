@@ -1,0 +1,110 @@
+
+
+  ========================
+
+How to extend Application related File System
+
+/app or /app/XXXX are related to application, mainly concentrate size of application file systems. if you find size is smaller than size RDC servers, please use listed steps to extended the file system.
+
+to extend size by 1G
+lvextend -L+1g /dev/mapper/appvg-datadef1_lv 
+
+to extended the extX filestem
+resize2fs /dev/mapper/appvg-datadef1_lv
+ 
+
+To extend the XFS filesystem
+xfs_growfs /dev/mapper/appvg-datadef1_lv
+ 
+
+ ==================
+use the link :
+http://geekswing.com/geek/unix/extending-a-linux-disk-with-lvm-extending-root-partition/
+
+or use the steps:
+
+echo 1 >/sys/block/sda/device/rescan
+fdisk /dev/sda          # (N)ew  maybe extended, then a new one on there. Set partition to (T)ype 8E (Linux LVM)
+                        # If you want to automate this or you simply abhor menus, use the parted command instead of fdisk.
+partx -a /dev/sda       # This will return warnings, but will make the kernel see the new partitions without unmounting first. Yay!
+pvcreate /dev/sda5     # Create a new LVM Physical Volume
+vgextend myvg /dev/sda5 # Add it to the Volume Group
+lvresize -l 100%PVS /dev/myvg/rootvol  # Adds 100% of available physical volume space to the volume
+
+Below is to extend a XFS file system: ( Default for RHEL7 )
+ 1049  xfs_info /dev/mapper/sysvg-var_lv
+ 1050  xfs_growfs /dev/mapper/sysvg-var_lv
+
+
+Below is to extent a EXT file systems: ( Defauly for RHEL6 )
+resize2fs /dev/myvg/rootvol            # Formats the added space, so it should now show up in a 'df' command
+
+other notes:
+
+1) can have max four primary partitions..anything more then that will be extended.
+4 partitions created? If they're all primary partitions, you can't add to this disk and must work with another one instead.
+5 or more partitions already created? This means you already have an extended partition. start a new disk.
+
+2) for changing the partition type for linux use the option "t"
+
+
+Steps for XFS file system:
+On devctlvpptapp07:
+
+       fdisk -l
+       fdisk /dev/sdb
+       fdisk -l
+ 1032  pvcreate /dev/sdb1
+ 1033  pvdisplay
+ 1037  lsblk
+ 1039  vgdisplay
+ 1040  vgextend sysvg /dev/sdb1
+ 1041  vgdisplay
+ 1044  lvresize -l 100%PVS /dev/sysvg/var_lv
+ 1049  xfs_info /dev/mapper/sysvg-var_lv
+ 1050  xfs_growfs /dev/mapper/sysvg-var_lv
+
+   ===============
+Steps for EXT file system:
+
+   43  fdisk -l
+   44  fdisk /dev/sdb
+   45  fdisk -l
+   46  pvdisplay
+   47  pvcreate /dev/sdb
+   48  pvcreate /dev/sdb1lv
+   49  pvdisplay
+   50  vgdisplay
+   51  vgextend VolGroup00 /dev/sdb1
+   52  vgdisplay
+   53  lvdisplay
+   54  lvextend -l +1919 /dev/VolGroup00/LogVol00
+   55  lvdisplay
+   56  df -h
+   57  resize2fs /dev/VolGroup00/LogVol00
+   58  history
+ =========================
+
+lvm resize on laeppmavm004
+
+  122  fdisk -l
+  124  df -h
+  125  shutdown -r now
+  126  fdisk -l
+  127  df -h
+  134  fdisk /dev/sda
+  135  fdisk -l
+  136  partx -a /dev/sda
+  137  echo 1 >/sys/block/sda/device/rescan
+  138  fidsk -l
+  140  pvdisplay
+  141  pvcreate /dev/sda4
+  142  pvdisplay
+  143  vgdisplay
+  144  vgextend myvg /dev/sda4
+  145  vgdisplay
+  147  lvdisplay
+  148  lvresize -l 100%PVS /dev/myvg/rootvol
+  149  df -h
+  150  resize2fs /dev/myvg/rootvol
+  151  df -h

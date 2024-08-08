@@ -1,0 +1,29 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who	        What
+# ----          ---	        ----
+# 09.16.20313	J. Wu		Created to add needed kernel options
+#
+#
+#==============================================================================
+
+. /etc/tda/env
+
+## The DL380 Gen8 needsi no x2apic added otherwise you see a call trace in dmsg
+## RH Case #00893875, See https://access.redhat.com/site/solutions/128053
+
+## Upon reboot, machine is unable to populate dev mapper links /dev/mapper
+## RH Case #00782942, See https://access.redhat.com/site/solutions/67292
+
+KERNEL_ARGS="intremap=no_x2apic_optout rdblacklist=multipath"
+
+/sbin/grubby --update-kernel=ALL --args="${KERNEL_ARGS}"
+if [ $? -ne 0 ]; then
+    echo -e "ERROR: Update of grub kernel args FAILED\n" >> ${INSTLOG}
+    exit 1
+fi
+
+exit 0

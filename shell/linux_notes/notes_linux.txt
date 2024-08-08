@@ -1,0 +1,6 @@
+
+
+scp issues:
+scp doesn't copy symlinks instead it expands the symlinks and copy entire files to remote host
+this may cause large size of contents on remote host 
+( use tar instead )

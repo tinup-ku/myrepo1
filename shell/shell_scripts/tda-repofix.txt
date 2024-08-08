@@ -1,0 +1,450 @@
+#!/bin/bash
+# Description: Find correct yum server and fix yum repo on RHEL client
+# machines to make it compliant with engineering standards
+# Author: Raj Shah
+# Version: 1.0 04/04/2019
+# ChangeLog:
+# format for changelog entry
+# index) mm/dd/yyyy short description of change
+#
+
+#TODO: enable repofix functionality for halo servers and RDC non-prod
+
+
+#set -xv
+
+declare -A reposrvs=(
+          [ct-npe-asc]="pkg-npe-ct-as-1.associatesys.local"
+          [ct-npe-cli]="pkg-npe-ct-cl-1.clientsys.local"
+          [ct-prd-asc]="pkg-prd-ct-as-1.associatesys.local"
+          [ct-prd-cli]="pkg-prd-ct-cl-1.clientsys.local"
+          [tx-npe-asc]="pkg-npe-tx-as-1.associatesys.local"
+          [tx-npe-cli]="pkg-npe-tx-cl-1.clientsys.local"
+          [tx-prd-asc]="pkg-prd-tx-as-1.associatesys.local"
+          [tx-prd-cli]="pkg-prd-tx-cl-1.clientsys.local"
+          [jc-prd-asc]="pkg-prd-jc-as-1.associatesys.local"
+          [jc-prd-cli]="pkg-prd-jc-cl-1.clientsys.local"
+          [ed-prd-asc]="pkg-prd-ed-as-1.associatesys.local"
+          [ed-prd-cli]="pkg-prd-ed-cl-1.clientsys.local"
+          [ct-npe-ascaux]="pkg-npe-ct-asaux-1.associateaux.local"
+          [ct-npe-cliaux]="pkg-npe-ct-claux-1.clientaux.local"
+          [tx-npe-ascaux]="pkg-npe-tx-asaux-1.associateaux.local"
+          [tx-npe-cliaux]="pkg-npe-tx-claux-1.clientaux.local"
+          [tx-prd-ascaux]="pkg-prd-tx-asaux-1.associateaux.local"
+          [tx-prd-cliaux]="pkg-prd-tx-claux-1.clientaux.local"
+          [jc-prd-ascaux]="pkg-prd-jc-asaux-1.associateaux.local"
+          [jc-prd-cliaux]="pkg-prd-jc-claux-1.clientaux.local"
+          [ed-prd-ascaux]="pkg-prd-ed-asaux-1.associateaux.local"
+          [ed-prd-cliaux]="pkg-prd-ed-claux-1.clientaux.local"
+          )
+fixlog="/tmp/tda-repofix-log"
+myhost=$(cat /proc/sys/kernel/hostname)
+# Following two global var set by functions
+YUMSERVER=""
+OSVERSION=""
+YUMTMOUT="180"
+
+display_help()
+{
+  echo -e "\nUsage:  $0 <options>\n"
+  echo "Example:"
+  echo -e "1) List and validate correct yum server for this host\n"
+  echo -e "$0 --listyumserver\n"
+  echo -e "2) Make repository compliant with engineering standards\n"
+  echo -e "   Run script as root user for this option\n"
+  echo -e "$0 --fixyumrepo\n"
+  echo -e "\nUsefull yum cli options:"
+  echo "How to enable specific disabled repo"
+  echo "#/usr/bin/yum-config-manager --enable <repo id>"
+  echo "How to list all available packages from specific repo"
+  echo "#yum list  available --disablerepo=* --enablerepo=<repo id>"
+  exit 1
+}
+
+arg_parse_check()
+{
+  fixrepo="no"
+  findyumsrv="no"
+  [[ $# -lt 1 ]] && display_help
+  while getopts ":ug-:" opt; do
+    case "${opt}" in
+        - )
+            LONG_OPTARG="${OPTARG#*=}"
+            case ${OPTARG} in
+              listyumserver )  findyumsrv="yes" ;;
+              fixyumrepo )     fixrepo="yes" ;;
+              help )              display_help
+                                  exit 0 ;;
+              '' )                break ;;
+              * )           echo "Illegal option --$OPTARG" >&2
+                            exit 2 ;;
+            esac ;;
+        \?)
+            echo "Invalid option: -${OPTARG}" >&2
+            display_help
+            exit 1
+            ;;
+        :)
+            echo "Option -${OPTARG} requires an argument." >&2
+            display_help
+            exit 1
+            ;;
+    esac
+  done
+}
+
+pre_check()
+{
+  if [[ ${EUID} != 0 ]]; then
+    echo "This script $0 --fixyumrepo need to run as root user"
+    display_help
+    exit 1
+  fi
+  if [[ "${myhost}" =~ ^h00.* ]]; then
+    #echo -e "${myhost} is halo server, repofix is not enabled in halo server yet"
+    echo -e "${myhost} is halo server, halo yum virtual repo will be enabled also"
+    #echo "Exiting..."
+    #exit 1
+  fi
+}
+
+find_verify_osversion()
+{
+  local osver=""
+  osver=$(cat /etc/redhat-release | grep 'Red Hat Enterprise Linux Server release')
+
+  if [[ "${osver}" =~ "Red Hat Enterprise Linux Server release 6" ]]; then
+    osver="6"
+  elif [[ "${osver}" =~ "Red Hat Enterprise Linux Server release 7" ]]; then
+    osver="7"
+  elif [[ "${osver}" =~ "Red Hat Enterprise Linux Server release 8" ]]; then
+    osver="8"
+  fi
+
+  if [[ ("${osver}" != "6") && ("${osver}" != "7") && ("${osver}" != "8") ]]; then
+    echo "ERROR: Host OS must be RHEL 6, 7 or 8"
+    echo "Host OS version is ${osver}"
+    exit 1
+  fi
+
+  if [[ "${osver}" == "8" ]]; then
+    echo "Host OS version is ${osver} is not supported yet."
+    echo "Contact Linux engineering team. exiting..."
+    exit1
+  fi
+  [[ ! -z "${osver}" ]] && OSVERSION="${osver}"
+}
+
+find_verify_yum_server()
+{
+  #temp_var=$(grep -Ei 'ASSCLI|ENV|BUILDING' /etc/tda/env)
+  local yumsrv=""
+  local yumserverfound="no"
+  local auxyumserverfound="no"
+  nettype=$(grep -i 'ASSCLI' /etc/tda/env | cut -d'=' -f2)
+  netenv=$(grep -i 'ENV' /etc/tda/env | cut -d'=' -f2)
+  location=$(grep -i 'BUILDING' /etc/tda/env | cut -d'=' -f2)
+  nettype=${nettype,,}
+  netenv=${netenv,,}
+  location=${location,,}
+  if [[ "${myhost}" =~ ^h00.* ]]; then
+    location="tx"
+  fi
+  if [[ "${nettype}" =~ ^asso.* ]]; then
+    nettype="asc"
+  else
+    nettype="cli"
+  fi
+
+  if [[ "${netenv}" =~ ^pr.* ]]; then
+    netenv="prd"
+  else
+    netenv="npe"
+  fi
+
+  searchkey="${location}-${netenv}-${nettype}"
+
+  local yumsrv=""
+  yumsrv=${reposrvs["${searchkey}"]}
+
+  if [[ -z ${yumsrv} ]]; then
+    echo "ERROR: could not find proper yum server"
+    echo "ERROR: Value of location-env-net is ${searchkey}"
+    exit 1
+  else
+    #echo "yum server found for this host: ${yumsrv}"
+    #wget test
+    #
+    isaccess=$(curl "http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.all/repodata/repomd.xml" 2>/dev/null| egrep -c '*-primary.xml.gz"/>')
+    if [[ ${isaccess} -eq 1 ]]; then
+      echo "yum server for this host: ${yumsrv}"
+      yumserverfound="yes"
+      echo "Update BUILDSERVER parameter value in /etc/tda/env if not ${yumsrv}"
+      if grep -Ec "BUILDSERVER=${yumsrv}" /etc/tda/env ; then
+        :
+      else
+	sed -i.bak 's/^BUILDSERVER *= *.*$/BUILDSERVER='"$yumsrv"'/' /etc/tda/env
+      fi        
+    else
+      echo "ERROR: yum server ${yumsrv} found but not able to access it."
+      echo "Make sure Firewall is not blocking connection from ${myhost} to ${yumsrv}"
+      hostnm=$(grep -i 'HOSTNAME' /etc/tda/env | cut -d'=' -f2)
+      if [[ "${hostnm}" =~ aux\.local ]]; then
+        echo "It is aux only server, let's try another server"
+        for ntype in asc cli ascaux cliaux;
+        do
+          if [[ "${ntype}" != "${nettype}" ]]; then
+            searchkey="${location}-${netenv}-${ntype}"
+            yumsrv=""
+            yumsrv=${reposrvs["${searchkey}"]}
+            if [[ ${yumsrv} =~ \.local ]]; then
+              isaccess=$(curl "http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.all/repodata/repomd.xml" 2>/dev/null| egrep -c '*-primary.xml.gz"/>')
+              if [[ ${isaccess} -eq 1 ]]; then
+                echo "yum server for this host: ${yumsrv}"
+                auxyumserverfound="yes"
+                yumserverfound="yes"
+                break
+              fi
+            fi
+          fi
+        done
+        if [[ "${auxyumserverfound}" != "yes" ]]; then
+          echo "We tried other yun server but did not work for this aux server"
+          echo "Fix connection issue and re-run this script. exiting..."
+          exit 1
+        fi
+      fi
+      if [[ "${yumserverfound}" != "yes" ]]; then
+        echo "Fix connection issue and re-run this script. exiting..."
+        exit 1
+      fi
+    fi
+  fi
+  [[ ! -z "${yumsrv}" ]] && YUMSERVER="${yumsrv}"
+}
+
+create_rhel6_repofile()
+{
+  local yumsrv="$1"
+  # RHEL6 tda-rhel6.repo (one file or file for each repo?)
+  cat <<EOF >/etc/yum.repos.d/tda-rhel6.repo
+[rhel6-base]
+name = Redhat Base Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.os/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat
+
+[rhel6-updates]
+name = Redhat Updates Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.updates/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat
+
+[rhel6-optional]
+name = Redhat Optional Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.optional/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat
+
+[rhel6-supplementary]
+name = Redhat Supplementary Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.supplementary/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat
+
+[rhel6-rhscl-1]
+name = Redhat Software Collections Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.rhscl-1/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat
+
+[rhel6-scalefs]
+name = Redhat ScalableFileSystem Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.scalefs/
+enabled = 0
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat
+
+[rhel6-epel]
+name = Extra Packages for Enterprise Linux (EPEL) Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.epel/
+enabled = 0
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-EPEL-6
+
+[rhel6-tda-addons]
+name = TDA RHEL RPM Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPMS.tda-addons/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-6-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-tda-package
+EOF
+chmod 644 /etc/yum.repos.d/tda-rhel6.repo
+}
+
+create_rhel7_repofile()
+{
+  local yumsrv="$1"
+  # RHEL7   tda-rhel7.repo (one file or file for each repo?)
+  cat <<EOF >/etc/yum.repos.d/tda-rhel7.repo
+[rhel7-base]
+name = RHEL7 Base Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.os/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat-release
+
+[rhel7-updates]
+name = RHEL7 Update Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.updates/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat-release
+
+[rhel7-optional]
+name = RHEL7 Optional Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.optional/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat-release
+
+[rhel7-supplementary]
+name = RHEL7 Supplementary Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.supplementary/
+enabled = 0
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat-release
+
+[rhel7-extra]
+name = RHEL7 Extra Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.extra/
+enabled = 0
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat-release
+
+[rhel7-rhscl-1]
+name = RHEL7 Software Collections Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.rhscl-1/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-redhat-release
+
+[rhel7-epel]
+name = Extra Packages for Enterprise Linux (EPEL) Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.epel/
+enabled = 0
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-EPEL-7
+
+[rhel7-tda-addons]
+name = TDA RHEL RPM Repository
+baseurl = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPMS.tda-addons/
+enabled = 1
+gpgcheck = 1
+gpgkey = http://${yumsrv}/yumrepos/mrepo/rhel-7-x86_64/RPM-GPG-KEY/RPM-GPG-KEY-tda-package
+EOF
+chmod 644 /etc/yum.repos.d/tda-rhel7.repo
+}
+
+create_rhel7_halorepofile()
+{
+  local yumsrv="$1"
+  # RHEL7   tda-rhel7.repo (one file or file for each repo?)
+  cat <<EOF >/etc/yum.repos.d/halo_yum_virtual.repo
+[halo_yum_virtual]
+name = Halo yum virtual repo from artifactory
+baseurl = https://artifactory.associatesys.local/artifactory/halo-yum-virtual/
+enabled = 1
+gpgcheck = 0
+EOF
+  chmod 644 /etc/yum.repos.d/halo_yum_virtual.repo
+  count=$(sed -n -e '/^\[main\]$/,/^\[/ p' /etc/yum.conf | grep -Ev ' *#' | grep -Ec ' *timeout *=.*$')
+  echo "Total ${count} entries found for timeout parameter in yum.conf"
+  if [[ ${count} -eq 0 ]]; then
+    echo "Adding timeout=${YUMTMOUT} parameter in yum.conf"
+    sed -i.bak '/\[main\] *$/a timeout='"$YUMTMOUT"'' /etc/yum.conf
+  elif [[ ${count} -eq 1 ]]; then 
+    echo "Replacing timeout parameter in yum.conf"
+    sed -i.bak '/^\[main\]$/,/^\[/s/^ *timeout *=.*/timeout='"$YUMTMOUT"'/' /etc/yum.conf
+  else
+    echo "Removing all old entries of timeout parameter in yum.conf"
+    sed -i.bak '/^ *timeout *=.*$/d' /etc/yum.conf
+    echo "Adding timeout=${YUMTMOUT} parameter in yum.conf"
+    sed -i '/\[main\] *$/a timeout='"$YUMTMOUT"'' /etc/yum.conf
+  fi
+
+}
+
+install_ansible()
+{
+  [[ -z "$1" ]] && { echo "first arg osver required"; return 0; }
+  local osver="$1"
+  if [[ "${osver}" == "7" ]]; then
+    extrarepo=$(yum repolist rhel7-extra rhel7-updates | grep -Ec '^.?rhel7-extra|^.?rhel7-updates')
+    if [[ ${extrarepo} -eq 2 ]]; then
+      if ! rpm -q ansible 1>/dev/null; then
+        echo -e "\nInstalling ansible package for rhel7"
+        yum -q --disablerepo=* --enablerepo=rhel7-extra,rhel7-updates -y install ansible
+      fi
+    fi
+  fi
+}
+
+update_repofile()
+{
+  [[ -z "$1" ]] && { echo "first arg osver required"; return 0; }
+  [[ -z "$2" ]] && { echo "second arg yumsrv required"; return 0; }
+  local osver="$1"
+  local yumsrv="$2"
+  [[ ! -d "/etc/yum.repos.d.bkp" ]] && mkdir /etc/yum.repos.d.bkp
+  echo "Saving current repo files to /etc/yum.repos.d.bkp"
+  /bin/mv /etc/yum.repos.d/* /etc/yum.repos.d.bkp/
+  if [[ "${osver}" == "6" ]]; then
+    create_rhel6_repofile ${yumsrv}
+  elif [[ "${osver}" == "7" ]]; then
+    create_rhel7_repofile ${yumsrv}
+    if [[ "${myhost}" =~ ^h00.* ]]; then
+      create_rhel7_halorepofile ${yumsrv}
+    fi
+  fi
+  echo "New yum repo file has been installed"
+  echo "Clearing old yum cache"
+  yum -q clean all
+  echo "Rebuilding yum cache"
+  yum -q makecache fast
+  echo -e "\nYum Repo Status after fixing yum repo\n"
+  if [[ "${osver}" == "6" ]]; then
+    yum repolist all
+  else
+    yum -q repolist all
+  fi
+}
+
+main()
+{
+  arg_parse_check "$@"
+  find_verify_osversion
+  if [[ "${findyumsrv}" == "yes" ]]; then
+    find_verify_yum_server
+    exit 0
+  fi
+  if [[ "${fixrepo}" == "yes" ]]; then
+    pre_check
+    find_verify_yum_server
+    echo "osver is ${OSVERSION} yumsrv is ${YUMSERVER}"
+    update_repofile ${OSVERSION} ${YUMSERVER}
+    install_ansible ${OSVERSION}
+    echo -e "\nUsefull yum cli options:"
+    echo "How to enable specific disabled repo"
+    echo "#/usr/bin/yum-config-manager --enable <repo id>"
+    echo "How to list all available packages from specific repo"
+    echo "#yum list  available --disablerepo=* --enablerepo=<repo id>"
+  fi
+}
+
+main "$@"

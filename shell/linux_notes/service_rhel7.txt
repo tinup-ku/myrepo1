@@ -1,0 +1,83 @@
+
+Sysctl timer job:
+
+convert cron job below sysctl timer job:
+0 * * * * sh /opt/work/my_run_test.sh >/opt/work/cache/my_test_run.log 2>&1
+
+
+# cat /etc/systemd/system/myapp.service
+[Unit]
+Description=My Test Agent
+
+[Service]
+Type=forking
+ExecStartPre=/bin/sh -c "/usr/bin/rm -rf /opt/myapp/cache/*"
+ExecStart=/opt/myapp/bin/myapp_start
+ExecStartPost=/opt/myapp/bin/myapp_start_post_steps
+ExecStop=/opt/myapp/bin/myapp_stop
+ExecStopPost=/opt/myapp/bin/myapp_stop_post_steps
+
+[Install]
+WantedBy=multi-user.target
+
+   ===============
+
+# cat /etc/systemd/system/MyAgent.service
+[Unit]
+Description=MY Agent for Linux 
+After=network.target syslog.target local-fs.target someapp.service
+
+[Service]
+Type=simple
+User=
+ExecStart=/opt/myapp/bin/myapp start
+ExecStop=/opt/myapp/bin/myapp stop
+Restart=no
+RemainAfterExit=1
+
+[Install]
+WantedBy=multi-user.target
+
+   ==============
+
+
+
+
+  ===================
+sysctl timer steps:
+
+ 1003  vi /usr/lib/systemd/system/check_misc.service
+
+ 1006  vi /usr/lib/systemd/system/check_misc.timer
+
+ 1008  chmod +x /opt/work/my_run_test.sh
+ 1009  systemctl enable check_misc.timer
+ 1010  systemctl start check_misc.timer
+ 1012  systemctl daemon-reload
+ 1013  systemctl list-timers check_misc*
+
+check logs:
+  journalctl -u check_misc.service
+
+  ========================
+# cat /usr/lib/systemd/system/check_misc.service
+[Unit]
+Description=check misc jobs
+
+[Service]
+Type=simple
+ExecStart=/opt/work/my_run_test.sh >/opt/work/cache/my_test_run.log 2>&1
+
+[Install]
+WantedBy=multi-user.target
+
+# cat /usr/lib/systemd/system/check_misc.timer
+[Unit]
+Description=Execute checks every day at midnight
+
+[Timer]
+OnCalendar=*-*-* *:0,30:00
+Unit=check_misc.service
+
+[Install]
+WantedBy=multi-user.target

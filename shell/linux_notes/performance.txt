@@ -1,0 +1,174 @@
+
+Sort processes by usage:
+
+ ps -eo pmem,pcpu,rss,vsize,args | sort -k 1 -r | less
+
+
+display a systems vital stats and highest CPU utilizing process:
+
+root@www:~ # top -b -n 1 | head -n 8
+
+top -n 1 ( just run once and exit )
+top - <username> (  process by username)
+
+monitor one process by pid:
+top -b -p 1311 -n1
+top -b -p 1311 -n1 | awk 'NR==8'
+
+   ========
+
+CPU util:
+using top:
+Look at the idle percentage , that will give how much is utilized
+look at wait to see if cpu waiting , typically for I/O
+
+using mpstat to check each core on multicps's:
+Look at idle and wait 
+check all cpu's with one sec sample: 
+   mpstat -P ALL 1 
+
+
+Using sar
+sar
+sar -u
+sar 3 2  ( 3 samples every 2 secs )
+
+using iostat:
+   iostat -c   ( check the iowait , if cpu is waiting on io)
+
+
+   =========
+
+Memory util:
+
+using top:
+KiB Mem : 32780120 total,  2041012 free,  2679416 used, 28059692 buff/cache
+Above is as:
+   Total: 32 G
+   Used: 2.6 G
+   Free: 2G ( 2.G used in actual and 28G used as buffers )
+   Buffered: 28G  ( free but used by buffers )
+
+   ===
+To list the process by memory usage-
+    Run top and then pres M ( in caps)
+
+     ==
+
+using "free -m"  ( or free -g )
+and look at "-/+ buffers/cache" column that says "free". It is in megabytes:
+$ free -m
+             total       used       free     shared    buffers     cached
+Mem:          1504       1491         13          0         91        764
+-/+ buffers/cache:        635        869
+Swap:         2047          6       2041
+$
+
+If you don't know how to read the numbers, you'll think the ram is 99% full when it's really just 42%.
+
+    ===
+sar -r 
+check:  free memory = ( kbmemused minus kbcached)
+
+
+SWAP:
+
+vmstat
+vmstat 3 2  ( Interval, how many times )
+sar -r 2 10  ( check swap utilization using sar)
+
+
+------------------------------------------
+
+Load average:
+Run top
+
+load average is shown in 1 min, 5 min and 15 min average
+It should be beween 1 - 2 (or less ) for a regular server
+It may go between 3 - 4  for database sever
+If the number is more then CPU need to be checked
+
+___________________________________________
+
+
+IO check:
+
+iostat -x  ( If wait is too high then it is a isssue )
+iostat -d
+
+using pidstat:
+ pidstat -d
+  pidstat –p <pid> –d   ( show for a pid )    
+  pidstat -p <pid> -d 5 ( repeat 5 secs )
+
+-----------------------------------------
+Network check:
+
+#netstat -i
+stats if all protocal:
+  netstat -s
+  netstat -s | grep error
+
+check routing table: netstat -r
+
+Using sar:
+  sar -n ALL
+
+check tcpdump ( under tcpdump notes file )
+
+------------------------------------------
+
+
+How to read the output of vmstat:
+
+By default, vmstat and iostat produce just one report showing the average values of various counters since the server was started, which is not very useful. However, you can give both tools an interval argument. (The first line shows the statistics since the system was started; you can just ignore this line.)
+
+
+
+Let’s look at an example of vmstat first. To make it print out a new report every five seconds, use the following command:
+$ vmstat 5
+procs -----------memory---------- ---swap-- -----io---- --system-- -----cpu------
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 0  0      0 282824  16220 168068    0    0    55    13 1004   26  1  1 98  0  0
+ 0  0      0 282824  16220 168068    0    0     0     0 1011   17  0  0 100  0  0
+ 0  0      0 282824  16240 168076    0    0     2    26 1008   34  0  1 99  0  0
+ 0  0      0 282824  16248 168076    0    0     0     8 1013   19  0  0 100  0  0
+
+
+Below are some general tips, which you can use while interpreting the output -
+
+•The run queue (r) is a queue of processes that are ready to run but must wait for their turn on a CPU; a run queue of 5 means that 5 processes are currently waiting to execute. When the CPU is pegged at 100% utilization, the severity of the CPU starvation won’t be reflected in the percentage of CPU utilization, but the run queue (r) will clearly show the impact.
+
+•Number of processes in uninterruptible sleep (b) can be used to identify the CPU power. If the value is constantly greater than zero then you may not have enough CPU power. Find out most CPU consuming processes and SQL statements. You can use ps command to list out most CPU consuming processes.
+
+•Amount of memory swapped in from disk (si) and Amount of memory swapped to disk (so) can be used to identify the memory bottleneck. If the value is constantly greater than zero, then it is an indication that you have a memory issue. You can use ps command to list out most memory consuming processes.We like to see si and so at 0 most of the time, and we definitely don’t like to see more than 10 blocks per second. Bursts are also bad.
+
+•These columns show how many blocks per second are read in from (bi) and written out to (bo) block devices. This usually reflects disk I/O.
+
+•Time spent running non-kernel code (us) is high (ie. above the normal usage) there is a possbility that some of the user intiated processes are consuming high CPU, use ps to list ouf the most CPU consuming processes.
+
+•Time spent waiting for IO (wa) is high then there is an issue in the disk storage subsystem and you will have to identify the sources of I/O contention using iostat.
+
+
+----------------------------------------------------
+NICE  ( -5) highest priority
+        19  lowest  priority
+
+system processes will run at (-5)
+Check for zombie process ===>  <defunc>
+  ==============================
+
+sar can go back in time and check the utilization
+
+To look at performance data history using sar:
+
+cd /var/log/sa ( below file number is by date of the month )
+
+ sar -f sa05   (cpu)
+ sar -P ALL -f sa05     (cpu check for each processor )
+ sar -S -f sa05  ( swap check )
+ sar -r -f sa05  ( memory check ) ( kbmemused minus kbcached )
+ sar -b -f /var/log/sa/sa05    ( I/O check )
+ sar -d -f /var/log/sa/sa05    ( I/O check for each disk )                    
+
+----------------------------------------------

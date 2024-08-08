@@ -1,0 +1,24 @@
+
+
+storage EMC:
+
+SAN
+Can be added to servers as a disk and replicate to other location on raw level
+there are also ways to connect to SAN using multipath if more fault tolerance is required for HA databases
+
+VMWare scans the disk and add as the virtual disk to the server
+Linux can add it as LVM
+
+
+Disk can be added as raw disk e.g. for Oracle and not visible to "df" and "lvm"
+only fdisk can show the disk data
+
+   ===============
+
+
+LVM on EMC SAN SRDF
+
+Once disk is presented by the hardware (EMC) to the system, LVM can be used for disk management.
+SRDF is the storage based replciation from R1 to R2. r1 => r2 can be replcaited to a block device which can be mounted on the HOST side(LVM control) for DR purpose
+
+  ================

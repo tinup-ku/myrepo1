@@ -1,0 +1,282 @@
+
+YUM and rpm:
+In very short terms, YUM will install a full application, along with ALL its dependencies that are needed for it to run (libraries, other applications, etc) whereas RPM installs a SINGLE package file that you downloaded. RPM will error out when installing a package that has other dependencies if they are not present, whereas YUM will go get them and present them for your confirmation to install.
+
+  ===========
+
+Install and update:
+install a single rpm:
+rpm -ivh <rpm name>
+or
+yum localinstall <path-to-rpm>
+
+Upgrade a rpm: ( it will install if the package is not ther already )
+rpm -Uvh <rpm name>
+
+Fresh a package: ( older versin of package must alredy be installed )
+rpm -Fvh *.rpm 
+
+Overwrite a package:
+rpm -ivh --replacepkgs <packge-name>
+
+Remove a rpm: ( using yum since it takes care of dependency etc.., rpm should be used as last choice)
+  rpm -e <rpm name>
+
+
+Remove a package without remove-ing a package which depends on it: ( don't remove dependencies )
+rpm -e --nodeps <package-name>
+ 
+
+
+   ===================
+
+Query:
+
+All installed packages:
+rpm -qa
+yum list installed
+
+  =====
+
+using rpm:
+List all files in a rpm:
+  rpm -ql <rpm name>
+  e.g rpm -ql time
+
+Display info about packge:
+  rpm -qi <rpm name>
+
+               
+List all config files in a package:
+  rpm -qc <rpm name>
+
+List all doc files in a packages:
+  rpm -qd <rpm name>
+
+
+List all dependencies without which this package can't be installed:
+  rpm -qR <rpm name >
+
+If the rpm is not installed, check details (info) of rpm file:
+ rpm -qpi <rpm name >
+
+To find out about a file which rpm it belongs to:
+rpm -qf <filename>
+   rpm -qf /bin/ps
+
+   or using yum:  yum provides vim
+                  yum whatprovides vim
+
+   ===========
+
+Package details which is downloaded on server:
+
+  If you have rpm downloaded:
+    check the package info:
+       rpm -qip puppet-agent-1.10.1-1.el7.x86_64.rpm
+    
+    check the contents of rpm:
+      List the files-
+         rpm -qlpv testapp1-1.0.0-1.x86_64.rpm
+
+  check the pre/post install scripts, run by package:
+     rpm -qp --scripts  testapp1-5.7.02-1.i386.rpm
+
+  check the dependencies which will be installed by the rpm:
+     rpm -qpR salt-2016.11.7-1.el6.noarch.rpm
+
+  If the package is already installed:   
+    check content (files ) of a package already installed:
+      rpm -qlv packagecloud-test
+
+    check the scripts run by a pakcage which is already installed on system:
+       rpm -q --scripts <packagename>
+
+check the dependencies for a package in repository: ( without installing it )
+   yum deplist salt-minion
+   yum deplist salt
+
+
+Resolving dependencies:
+
+check the yum logs:
+   cat /var/log/yum.log
+
+check dependencies:
+     yum deplist
+
+check dependencies using "rpm":
+     rpm -q --requires python-perf
+
+check what dependencies a packae provide:
+    rpm -q --provides python-perf
+
+Check what other packages depend on a rpm package.
+   # rpm -q --whatrequires sudo
+
+when removing a packageA , if any other package which are dependent on pacakageA
+they are also removed.
+for example: In the case below , removing the sudo will also remove foreman-proxy
+since foreman-proxy need sudo
+
+# rpm -q --whatrequires sudo
+foreman-proxy-1.15.6-1.el7.noarch
+ 
+checking what is installed:
+  rpm -q python-perf
+
+Update a single package:
+  yum update -y -q python-perf
+
+Downgrade a package:
+  yum downgrade python-perf
+
+
+Downgrade to a specific version:
+   yum downgrade python-perf-3.10.0-327.el7.x86_64
+   rpm -q python-perf
+
+After downgrade, you may want to lock down a package to specific version
+so that yum update with not upgrade it.
+Locking a package to certain version:
+  rpm -q yum-plugin-versionlock
+  yum list updates python-perf
+  yum versionlock add python-perf
+  yum versionlock list
+  yum list updates python-perf
+
+   =========== 
+
+Extract the content of a rpm package into a dir:
+  rpm2cpio ./<rpm name> | cpio -idmv
+
+  ==============
+
+
+Yum:
+  yum repolist
+  yum list
+  yum list all
+  yum list available
+  yum list updates
+  yum list <package>
+  yum list installed
+  yum list available *repo*
+  yum install ...
+  yum localinstall <path to locally located package on server>
+  yum update 
+  yum update <package-name>
+  yum info <package-name>
+  yum check-update
+  yum clean all
+serach for a package
+  yum search <package-name>  
+search for a file in a package:
+  yum provides */repomanage   ( show the package name which provide the file repomanage )
+List from specific repo:
+   # yum --disablerepo="*" --enablerepo="aeppkgs-x86_64-production" list recent | grep -i commu
+check what if installed from a specific repo:
+   yum --disablerepo="*" --enablerepo="aeppkgs-x86_64-production" list installed | grep -i commu
+
+check with disabled respos:
+   repoquery --enablerepo=\*--show-duplicates ansible
+   yumdownloader --enablerepo=\*--resolve ansible-0:2.5.0-2.el7.noarch
+
+check the info about a package:
+   # yum info app_tl_frontend_community_beta.noarch
+
+
+   =============
+package download only and not installing them -
+  use the yumdownloader which is available by installing yum-utils
+  yum install yum-utils
+  yumdownloader puppetserver
+
+  if there are multiple versions available then download a specific version:
+ 1024  yumdownloader puppetserver-2.7.2-1.el7
+ 1033  yumdownloader puppet-agent-1.10.1-1.el7
+   
+Above is how to use package version from yum list like below:
+puppetserver.noarch                       2.7.2-1.el7             @puppetlabs-pc1
+puppetserver.noarch                       2.8.0-1.el7             puppetlabs-pc1
+
+
+yum:
+ yum list <package-name> --showduplicates
+
+
+List all available versions of a package:
+ # yum search --showduplicates git | grep "^git"
+
+  ============
+
+     ===================================
+
+To list all available updated packages:
+   yum list updates
+   yum list recent
+
+     ==============================
+
+yum:
+List all available versions of a package:
+
+ # yum search --showduplicates git | grep "^git"
+
+  ============
+check history of package when it was installed:
+yum history info nodejs
+
+   ==============
+
+
+
+rpm package pre/post install scripts: ( default variables )
+
+preinstall: 
+  Install
+     $1==1
+  upgrade:
+     $1==2
+  uninstall
+     NA
+
+postinstall:
+   install:
+      $1==1
+   upgrade:
+      $1=2
+   uninstall:
+     NA
+
+preuninstall:
+   install:
+      NA
+   upgrade:
+     $1==1
+   uninstall:
+     $1==0
+
+postuninstall:
+   install:
+      NA
+   upgrade:
+      $1==1
+   uninstall:
+      $1==0
+
+
+  =======================
+
+
+
+
+
+
+
+
+
+
+
+
+

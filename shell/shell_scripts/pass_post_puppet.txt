@@ -1,0 +1,24 @@
+[root@h0000173 ~]# cat PaaS.post_puppet
+#!/bin/bash
+
+source /etc/tda/env
+if [[ $APP != 'Generic' ]] ; then
+
+  paas_app="`facter paas_app`"
+  counter=0
+
+  while [[ $paas_app != 'completed' ]] ; do
+    #echo "...RUNNING PUPPET IN PAAS APP WHILE LOOP"
+    puppet agent -t --ignorecache
+
+    if [[ "$counter" -gt 96 ]]; then
+      #echo "...counter limit of ${counter} reached , exiting loop."
+      exit 1
+    else
+      counter=$((counter+1))
+      #echo "...Ran $counter time(s); Sleeping..."
+      sleep 900
+    fi
+  done
+
+fi

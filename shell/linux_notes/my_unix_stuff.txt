@@ -1,0 +1,278 @@
+
+Implement SH
+#---------------------------------------------------------------------------
+#EID:Slt DID State DG       Size Intf Med SED PI SeSz Model         Sp Type
+#---------------------------------------------------------------------------
+#64:2      2 UGood -  446.625 GB SATA SSD N   N  512B MTFDDAK480TDS U  -
+#64:3      3 UGood -  446.625 GB SATA SSD N   N  512B MTFDDAK480TDS U  -
+#---------------------------------------------------------------------------
+
+SPLUNK_HOME=/opt/splunk
+SPLUNK_BIN=${SPLUNK_HOME}/bin
+SPLUNK_LOCAL=${SPLUNK_HOME}/etc/system/local
+splunk_version="splunk-8.1.5-9c0c082e4596.x86_64"
+env_=`uname -n|grep -o '...$'`
+date_=$(date '+%a%H%M_%m%d%Y')
+
+[[ `uname -n` = "mytestserver" ]] && {
+   echo "Running $0 on wrong node: mytestserver"
+   exit
+}
+
+env_=`uname -n|grep -o '...$'`
+{
+eval `gpg --batch --passphrase option -d .dotfile` >/dev/null 2>&1
+} 2>/dev/null
+
+case ${env_} in
+         pri | sec )
+                     uid=dev_user_id
+                     gid=dev_gid
+                     fqdn="dev.xyz_company.com"
+                     key=$dev
+                     ;;
+   trd | frd | xyz )
+                     uid=prod_user_id
+                     gid=my_gid
+                     fqdn="cdc.xyz_company.com"
+                     key=$prod
+                     ;;
+                 * )
+                     case `uname -n` in
+                           cup* )
+                                uid=prod_user_id
+                                gid=my_gid
+                                fqdn="dom.xyz_company.com"
+                                key=$prod
+                                ;;
+                            cud*| cut* )
+                                uid=dev_user_id
+                                gid=dev_gid
+                                fqdn="dom.xyz_company.com"
+                                key=$dev
+                                ;;
+                     esac
+                     ;;
+esac
+
+
+{
+# If splunk ${splunk_version} installed then exit
+[[ "`rpm -q splunk`" = "${splunk_version}" ]] && {
+  echo "${splunk_version} installed. Abort."
+  exit
+}
+
+check_DISK ()
+{
+ flag=false
+ while [[ "$flag" = "false" ]]
+ do
+   if [[ ! -b $1 ]]
+   then
+     echo "Pause for 3 seconds."
+     sleep 3s
+   else
+    flag=true
+   fi
+ done
+}
+
+
+
+
+# Create virtual disk, /dev/sdb, via perccli utility
+ssd_drives=`perccli /c0/eall/s2-3 show|awk '/SATA SSD/{print $1}'|sed 's/64://g'`
+ssd_drives=`echo ${ssd_drives}|sed 's/ /,/g'`
+
+[[ "${ssd_drives}" = "2,3" ]] && {
+   echo "Creating virtual RAID50 /dev/sdb"
+   echo "SSD Slots: $ssd_drives"
+   echo "perccli /c0 add vd type=raid1 drives=64:2-3"
+
+   # Before creating, check if already created.
+   perccli /c0/v1 show|grep -w 'RAID1' >/dev/null
+   if [[ "$?" != "0" ]]
+   then
+      echo "Creating virtual drive (RAID1) on slot drives=64:2-3"
+      perccli /c0 add vd type=raid1 drives=64:2-3
+
+      # Verifying if virtual drive created.
+      v1_size=`perccli /c0/v1 show|awk '/RAID1/{print $(NF -1)}'`
+      [[ "${v1_size}" = "446.625" ]] && {
+          echo "Creating /opt/splunk filesystem"
+          DISK=/dev/sdb
+          check_DISK $DISK
+          if [[ -b ${DISK} ]]
+          then
+            echo "Formatting ${DISK}:"
+            parted -s ${DISK} mklabel gpt
+            parted -s -- ${DISK} unit TB mkpart primary ext4 0% 100%
+            partprobe
+            echo "Creating physical volume ${DISK}1"
+            pvcreate ${DISK}1
+            echo "Creating splunk volume group: splunkvg"
+            vgcreate splunkvg ${DISK}1
+            echo
+            echo "Creating splunk Index logical volume: splunkindex_lv"
+            lvcreate -y -l 100%FREE -n splunkindex_lv splunkvg
+            echo
+            echo "Creating /dev/splunkvg/splunkindex_lv filesystem"
+            mkfs.ext4 -m 1 /dev/splunkvg/splunkindex_lv
+          else
+            echo "${DISK} doesnot exist. Abort."
+            exit
+          fi
+      }
+   else
+      echo "Virtual disk /dev/sdb already created:"
+      perccli /c0/v1 show|grep -w 'RAID50'
+      echo "Skip this step."
+   fi
+}
+
+
+grep '/opt/splunk' /etc/fstab >/dev/null
+if [ "$?" != "0" ]
+then
+   echo "Updating /etc/fstab: /dev/splunkvg/splunkindex_lv /opt/splunk ext4 noatime,errors=remount-ro 1 0"
+   echo '/dev/splunkvg/splunkindex_lv /opt/splunk ext4 noatime,errors=remount-ro 1 0' >> /etc/fstab
+else
+   echo "/opt/splunki ALREADY DEFINED in /etc/fstab"
+fi
+
+echo "Mounting /opt/splunk"
+mkdir -p /opt/splunk
+mount /opt/splunk
+
+# Create mount point /opt/splunkindex_data, /opt/splunkindexhot_data, /ELI
+mkdir -p /opt/splunkindex_data /ELI 2>/dev/null
+#mount /opt/splunkindex_data 2>/dev/null
+
+# Install splunk 8.1.5: splunk-8.1.5-9c0c082e4596-linux-2.6-x86_64.rpm
+echo "Installing splunk-8.1.5-9c0c082e4596-linux-2.6-x86_64.rpm"
+mount|grep '^server.dev.xyz_company.com:/infra/softdepot' >/dev/null
+[[ "$?" != "0" ]] && mount server.dev.xyz_company.com:/infra/softdepot /mnt
+cd /mnt/Splunk/8.1.5 && {
+   mount|grep '/opt/splunk' >/dev/null
+   [[ "$?" = "0" ]] && rpm -ivh splunk-latest-x86_64.rpm
+}
+
+echo "Creating ${SPLUNK_HOME}/etc/system/local/user-seed.conf"
+cat <<END > ${SPLUNK_HOME}/etc/system/local/user-seed.conf
+[user_info]
+USERNAME = admin
+PASSWORD = ${key}
+END
+
+echo
+echo "Enable splunk@system bootup"
+# ${SPLUNK_BIN}/splunk enable boot-start --answer-yes --no-prompt --accept-license
+# Enable System V initd rather than systemd on RHEL7 + Splunk version 7 or >
+# by adding '-systemd-managed 0' in splunk enable boot-start
+# For systemD, ' -systemd-managed 1'
+
+${SPLUNK_BIN}/splunk enable boot-start -systemd-managed 1 --answer-yes --no-prompt --accept-license -user root
+echo "Starting splunk..."
+
+echo
+
+# Start splunk via systemV init
+systemctl start Splunkd
+
+# Install additional packages as required by METs
+echo
+echo "Installing required packages:"
+yum -y install kernel-headers
+yum -y install glibc-headers
+yum -y install gcc
+yum -y install gdb
+yum -y install zip
+yum -y install unzip
+yum -y install nc nmap
+yum -y install traceroute
+rpm -q kernel-headers glibc-headers gcc gdb zip unzip nc nmap
+
+# Set up splunk parameters
+# 1. /etc/security/limits.conf
+echo
+grep '262144' /etc/security/limits.conf >/dev/null
+[[ "$?" != "0" ]] && {
+   echo "Updating /etc/security/limits.conf"
+   mv -f /etc/security/limits.conf /etc/security/limits.conf.ORIG
+   {
+   cat /etc/security/limits.conf.ORIG
+   cat<<END_
+# Begin Splunk Settings
+*     soft    nofile  262144
+*     hard    nofile  262144
+# End Splunk Settings
+END_
+   } >> /etc/security/limits.conf
+}
+
+# 2. /etc/sysctl.conf
+echo
+grep 'fs.file-max = 2048000' /etc/sysctl.conf >/dev/null
+[[ "$?" != "0" ]] && {
+   echo "Updating /etc/sysctl.conf"
+   mv -f /etc/sysctl.conf /etc/sysctl.conf.ORIG
+   {
+   cat /etc/sysctl.conf.ORIG
+cat<<END__
+# Begin Splunk Settings
+fs.file-max = 2048000
+vm.swappiness = 5
+# End Splunk Settings
+END__
+   } >> /etc/sysctl.conf
+}
+sysctl -p
+
+# 3. /etc/security/limits.d/20-nproc.conf: nproc set to 131072 per Splunk's recommendation.
+echo
+echo "Updating /etc/security/limits.d/20-nproc.conf"
+{
+cat<<END
+# Default limit for number of user's processes to prevent
+# accidental fork bombs.
+# See rhbz #432903 for reasoning.
+
+*          soft    nproc     131072
+*          hard    nproc     131072
+root       soft    nproc     unlimited
+END
+} > /etc/security/limits.d/20-nproc.conf
+
+chmod 644 /etc/security/limits.d/20-nproc.conf
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+echo "Splunk recommends to turn off Transparent Huge Pages (THP)"
+echo "Updating /etc/rc.local:"
+[ -f /etc/rc.d/rc.local ] && {
+  /bin/cp -p /etc/rc.d/rc.local /etc/rc.d/ORIG.rc.local
+  {
+    cat /etc/rc.d/ORIG.rc.local
+    cat<<EOF
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+# This has a profound impact on system load. There's a decent Oracle Blog
+# about it at
+# https://blogs.oracle.com/linux/entry/performance_issues_with_transparent_huge.
+# http://answers.splunk.com/answers/112305/on-rh-6-and-splunk-6-my-searches-are-consuming-lots-of-cpu
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+EOF
+  } > /etc/rc.d/rc.local
+
+chmod +x /etc/rc.d/rc.local
+/etc/rc.d/rc.local
+}
+echo "COMPLETED."
+cd / && umount /mnt
+echo
+} 2>&1 | tee /root/`basename $0`.${date_}.output
+echo
+echo "OUTPUT: /root/`basename $0`.${date_}.output"
+

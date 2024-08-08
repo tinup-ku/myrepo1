@@ -1,0 +1,71 @@
+
+putty configurations tips:
+https://www.linux.com/training-tutorials/improving-putty-settings-windows/
+
+Improving Putty settings on Windows
+
+open the default template in Category: Session by selecting Default Settings and pressing the Load button.
+
+Make SSH the default.
+ go to Category: Session and select SSH.
+
+Increase scrollback buffer.
+Category: Window and increase Lines of scrollback to 20000.
+
+Choose a good font.
+The newer Putty binaries are able to make use of ClearType which drastically improves the font quality compared to Antialiased. Go to Category: Window > Appearance, choose ClearType and a nice font. I prefer Lucida Console, 9-point.
+
+When you are there, you might want to change the Gap between text and window edge to 3 pixels.
+
+Use proper character encoding.
+Nowadays all Linux systems are able to use Unicode (UTF-8) so to make sure that the output in Putty (especially everything non-ascii) looks fine, go to Category: Window > Translation and change the character set to UTF-8, make sure that also the line drawing characters use Unicode as well.
+
+Linux copy-and-pasting.
+I prefer to do an implicit copy when selecting and using the middle mouse button for pasting. So I go to Category: Window > Selection and set the Action of mouse buttons to xterm (Right extends, Middle pastes)
+
+When you are there, also enable the option Paste to clipboard in RTF as well as plain text, which is nice when you are copy-and-pasting to emails or text documents that allow fonts and colours. Your console output will look much the same as it does on your screen!
+
+Change dark colours on a black background.
+One of the more annoying things with terminal applications (xterm has the same issue) is that by default dark-blue is too dark to be visible on a black background. Not only is this frustrating, it makes the experience for new users so bad that they prefer to disable colours (or hate the ls colour output or syntax highlighting in vim).
+
+So if you are like me, go to Category: Window > Colours and select ANSI Blue in the Select a colour to adjust to Red:74 Green:74 Blue:255. I do the same for ANSI Blue Bold to Red:140 Green:140 Blue:255.
+
+Keeping idle sessions active.
+Another frustrating problem is induced by the time-to-live of inactive or idle TCP sessions on firewall or switch configurations. At some companies this is put aggressively low so that TCP sessions that have no activity for 1 minute or even 30 seconds are being dropped. If you are using an SSH connection over such a network device, you have to take care to send keep-alive packets over your idle session. To do this go to Category: Connection and set Seconds between keepalives (0 to turn off) to 25.
+
+Finally, saving the default.
+Now, don’t forget to save the changes you just made to the default template. If you loaded the Default Settings at the start, return back to Category: Session and press the Save button. Now you are done !
+
+Putty settings summary.
+Category: Session
+Connection type: SSH
+
+Category: Window
+Lines of scrollback: 20000
+
+Category: Window > Appearance
+Font: Lucida Console, 9-point
+Font quality: ClearType
+Gap between text and window edge: 3
+
+Category: Window > Translation
+Character set: UTF-8
+Handling of line drawing characters: Unicode
+
+Category: Window > Selection
+Action of mouse buttons: xterm (Right extends, Middle pastes)
+Paste to clipboard in RTF as well as plain text: enabled
+
+Category: Window > Colours
+ANSI Blue: Red:74 Green:74 Blue:255
+ANSI Blue Bold: Red:140: Green:140 Blue:255
+
+Category: Connection
+Seconds between keepalives (0 to turn off): 25
+   ===================
+
+If terminal setting giving issue, Run:
+stty sane
+tput reset
+
+ 

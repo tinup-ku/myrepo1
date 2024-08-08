@@ -1,0 +1,24 @@
+logrotated
+
+Running logrotate manually in debug  mode:
+  /usr/sbin/logrotate -d /etc/logrotate.conf
+
+
+It runs by cron using below daily cron job:
+   cat /etc/cron.daily/logrotate
+
+config files for log rotation are saved here:
+  /etc/logrotate.conf
+  /etc/logrotate.d/*
+
+when packages are installed they drop the log rotation config in /etc/logrotate.d/
+
+ =================
+
+if configured weekly rotation files are skipped until reach a week time ( sunday 3:25 am)
+cron daily job runs at 3:00 daily
+
+  ================
+
+
+

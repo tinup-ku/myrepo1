@@ -1,0 +1,76 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 04.04.2012    J. Ritter       Created inital script
+# 03.08.2013	J. Wu		Added support for new site codes TX and MW
+#
+#==============================================================================
+
+. /etc/tda/env
+
+# Configure ntp
+
+echo "Configure NTP" >> ${INSTLOG}
+
+case ${BUILDING} in
+  CT ) bld="ct" ;;
+  JC) bld="jc" ;;
+  TX) bld="tx" ;;
+  MW) bld="jc" ;;
+  *) echo -e "ERROR no building $BUILDING defined" >> ${INSTLOG} ;;
+esac
+
+case ${ASSCLI} in
+  ASSOCIATE ) ac="as" ;;
+  CLIENTSYS ) ac="cl" ;;
+  * ) echo -e "ERROR: no zone $ASSCLI found" >> ${INSTLOG} ;;
+esac
+
+PREFIX=ntp-${bld}-${ac}
+
+echo -e "\nNTP Servers: ${PREFIX}-1.associatesys.local, ${PREFIX}-2.associatesys.local, ${PREFIX}-3.associatesys.local" >> ${INSTLOG}
+
+if [ -f /etc/ntp.conf ]; then mv /etc/ntp.conf /etc/ntp.conf.RHEL; fi
+
+# Create the ntp.conf file for the new NTP servers
+cat > /etc/ntp.conf << _EOF
+server ${PREFIX}-1.associatesys.local
+server ${PREFIX}-2.associatesys.local
+server ${PREFIX}-3.associatesys.local
+
+restrict default kod nomodify notrap nopeer noquery
+restrict 127.0.0.1
+
+driftfile /var/lib/ntp/drift/ntp.drift
+
+_EOF
+
+if [ -f /etc/localtime ]; then
+  rm -rf /etc/localtime
+  ln -sf /usr/share/zoneinfo/CST6CDT /etc/localtime
+else
+  ln -sf /usr/share/zoneinfo/CST6CDT /etc/localtime
+fi
+
+if [ ! -d /var/lib/ntp/drift ]; then
+  	mkdir -p /var/lib/ntp/drift
+fi
+
+if [ ! -f /var/lib/ntp/drift/ntp.drift ]; then
+ 	touch /var/lib/ntp/drift/ntp.drift
+fi
+
+chown -R ntp:ntp /var/lib/ntp
+
+ntpdate ${PREFIX}-1.associatesys.local ${PREFIX}-2.associatesys.local ${PREFIX}-3.associatesys.local 2>&1 >> ${INSTLOG}
+/sbin/hwclock --systohc 2>&1 >> ${INSTLOG}
+
+# NTP needs to be started up by default
+chkconfig ntpd on 
+service ntpd restart 
+
+exit 0

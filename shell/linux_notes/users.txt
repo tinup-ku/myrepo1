@@ -1,0 +1,6 @@
+Managing users:
+  useradd 
+  usermod
+  userdel
+  change   - sets and modify password aging
+  passwd

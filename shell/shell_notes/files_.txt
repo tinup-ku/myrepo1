@@ -1,0 +1,8 @@
+read a file line by line in bash:
+
+#!/bin/bash
+app_curls="./data1"
+while IFS= read -r line
+do
+  echo "$line"
+done < "${app_curls}"

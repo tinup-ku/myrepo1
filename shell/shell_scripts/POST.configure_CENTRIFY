@@ -1,0 +1,40 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 04.04.2012    J. Ritter       Created inital script
+# 09.13.2013	J. Wu		Updated to fail to rpm install or join fails
+#
+#==============================================================================
+
+. /etc/tda/env
+
+# Install and Configure Centrify
+yum -y install CentrifyDC 
+if [ $? -ne 0 ]; then
+    echo -e "ERROR: CentrifyDC Package Install FAILED" >> ${INSTLOG}
+    exit 1
+fi
+
+echo -e "\nExecuting Centrify join:" >> ${INSTLOG}
+echo -e "\tCentrify Zone : ${CENTRIFY_ZONE}\n\tCentrify Domain : ${CENTRIFY_DOMAIN}\n\tMy Hostname : `hostname`\n\n" >> ${INSTLOG}
+
+/usr/bin/adinfo > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    ## Leave the zone in are joined
+    echo -e "Host is joined to zone, leaving...\n" >> ${INSTLOG}
+    /usr/bin/adleave -f
+fi
+
+/usr/bin/adinfo -T ${CENTRIFY_DOMAIN} 2>&1 >> ${INSTLOG}
+sleep 5
+/usr/sbin/adjoin --force -V -u 'zUnixADJoin' -p 't479788a1!' -c "ou=Computers,ou=Unix" -z ${CENTRIFY_ZONE} ${CENTRIFY_DOMAIN} 2>&1 >> ${INSTLOG}
+if [ $? -ne 0 ]; then
+    echo "ERROR: Centrify join to zone ${CENTRIFY_ZONE} on domain ${CENTRIFY_DOMAIN} FAILED" >> ${INSTLOG}
+    exit 1
+fi
+
+exit 0

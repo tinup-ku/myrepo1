@@ -1,0 +1,39 @@
+
+
+    ===========
+
+Artifactory repository:
+
+Uploading rpm using UI:
+
+go/artifactory
+
+or
+
+https://artifactory.associatesys.local/artifactory/webapp/#/home
+
+
+on left bar: click second tab: "artifacts"
+
+search for "sme-rpm-local"
+
+on right, top click deploy and chose rpm from desktop
+
+   =============
+
+
+Tools 
+
+
+    ========
+
+checking artifactory for firewall issues:
+
+Artifactory working:
+
+[root@prdtxlvulsegw01 ~]# curl https://artifactory.associatesys.local/artifactory/sme-rpm-local/
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+
+    ==========
+

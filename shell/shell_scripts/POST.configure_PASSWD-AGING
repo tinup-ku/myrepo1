@@ -1,0 +1,51 @@
+#!/bin/bash -x
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 06.21.2012    J. Wu       Ported over from SLES release installer
+#
+#==============================================================================
+
+echo "Configuring password constraints:" >> ${INSTLOG}
+
+file=/etc/login.defs
+cp $file $file.orig
+
+awk ' BEGIN { 
+        # Stuff we care about in the conf file goes here 
+        conf["PASS_MAX_DAYS"]="90";
+        conf["PASS_MIN_DAYS"]="2";
+        conf["PASS_WARN_AGE"]="14";
+        conf["PASS_MIN_LEN"]="8";
+    }
+    # Go through each line and if it is something we care about, replace it
+    # with the correct values
+    { for ( key in conf ) { 
+          s="^#? *" key ".*"
+          if ( $0 ~ s ) { 
+              found[key]=1
+              print key " " conf[key];
+              next;
+          } 
+      }
+      print; 
+    }
+    # If we didnt already find the entry in the file, make sure that it is
+    # explicitely added to the bottom
+    END {
+      for ( key in conf ) {
+          if ( found[key] != 1 ) {
+              print key " " conf[key];
+          }
+      }
+    }' < $file > $file.tmp
+
+if [ $? -ne 0 ] ; then echo "Error writing file.tmp"; fi
+cp $file.tmp $file
+if [ $? -ne 0 ] ; then echo "Error copying $file.tmp to $file"; fi
+rm -f $file.tmp
+if [ $? -ne 0 ] ; then echo "Error removing $file.tmp" ;exit 1; fi
+    
+exit 0

@@ -1,0 +1,449 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who     	What
+# ----          ---     	----
+# 04.04.2012	J. Ritter	Created inital script
+# 06.12.2012	J. Wu		Add bits for bonding and configue network for
+#				TDA standards
+# 06.25.2012	J. Wu		Updated with bug found in testing re heartbeat
+# 04.29.2013	J. Wu		Updated with fixes to support pod 160
+# 09.04.2013	J. Wu		Updated with fix for aux only deft route and 
+#				other fixes
+#
+#==============================================================================
+
+. /etc/tda/env
+
+function get_ip {
+    ifconfig $1 | grep "inet addr:" | awk '{print $2}' | cut -d: -f 2
+}
+
+function get_mac {
+    ip link show $1 | awk '/ether/ {print $2}'
+} # End get_mac
+
+function create_static_route {
+    local auxn=$1
+    local auxg=$2
+    local auxi=$3
+
+    echo "Adding static route"
+
+    echo "${auxn} via ${auxg} dev ${auxi}" > /etc/sysconfig/network-scripts/route-${auxi}
+} ## End create_static_route
+
+function start_interface {
+    local interface=$1
+    
+    /sbin/ifconfig $interface up
+    # Wait for ethtool to catch up and return a valid link
+    # Give it 5 seconds max
+    cnt=0;
+    while [ $cnt -lt 5 ]; do
+        sleep 1
+        ethtool $interface | grep Link | grep -q "yes"
+        if [ $? -eq 0 ]; then
+            echo $interface
+            break
+        fi
+        cnt=`expr $cnt + 1`     
+    done
+
+    /sbin/dhclient -r $interface
+    /sbin/dhclient $interface > /dev/null 2>&1
+    if [ $? -ne 0 ]; then echo "dhclient problem starting" ; fi
+
+    # If the IP is bad, then try again
+    get_ip $interface | cut -d. -f 1 | grep -q 169
+    if [ $? -eq 0 ]; then
+        /sbin/dhclient -r $interface > /dev/null 2>&1
+        /sbin/dhclient $interface > /dev/null 2>&1
+    fi
+} ## End of start_interface 
+
+function stop_interface {
+    local interface=$1
+
+    dhclient -r $interface
+    if ps ax | grep dhclient | grep $interface > /dev/null 2>&1; then
+	kill `ps ax | grep dhclient | grep $interface | awk '{print $1}'`
+	if [ $? -ne 0 ]; then echo "Unable to kill dhclient $pid"; fi
+    fi
+    ifconfig $interface down 
+    if [ $? -ne 0 ]; then echo "Bad ifdown: $interface"; fi
+} ## End stop_interface
+
+function create_interface {
+    local iface=$1
+    local name=$2
+    local cam=`get_mac $iface`
+
+    # Create the new bond file
+    cat > /etc/sysconfig/network-scripts/ifcfg-$iface << EOF
+DEVICE="$iface"
+BOOTPROTO="dhcp"
+DHCP_HOSTNAME="$name"
+HWADDR="$cam"
+IPV6INIT="no"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+TYPE="Ethernet"
+USERCTL="no"
+PEERDNS="no"
+EOF
+} ## End create_interface
+
+function create_interface_with_dns {
+    local iface=$1
+    local name=$2
+    local cam=`get_mac $iface`
+
+    # Create the new bond file
+    cat > /etc/sysconfig/network-scripts/ifcfg-$iface << EOF
+DEVICE="$iface"
+BOOTPROTO="dhcp"
+DHCP_HOSTNAME="$name"
+HWADDR="$cam"
+IPV6INIT="no"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+TYPE="Ethernet"
+USERCTL="no"
+PEERDNS="yes"
+EOF
+} ## End create_interface_with_dns
+
+function create_bond {
+    local bondname=$1
+    local slavea=$2
+    local slaveb=$3
+    local name=$4
+    local cam=`get_mac $slavea`
+
+    # Setup modprobe.conf
+    echo "alias netdev-$bondname bonding"  >> /etc/modprobe.d/bonding.conf
+
+    # Add the bonding bits to the file
+    cat > /etc/sysconfig/network-scripts/ifcfg-$bondname << EOF
+DEVICE="$bondname"
+BOOTPROTO="dhcp"
+DHCP_HOSTNAME="$name"
+IPV6INIT="no"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+USERCTL="no"
+PEERDNS="no"
+BONDING_OPTS="mode=1 miimon=100"
+EOF
+
+#HWADDR="$cam"
+
+
+    cat > /etc/sysconfig/network-scripts/ifcfg-$slavea << EOA 
+DEVICE="$slavea"
+BOOTPROTO="none"
+ONBOOT="yes"
+MASTER="$bondname"
+SLAVE=yes
+USERCTL=no
+EOA
+
+    cat > /etc/sysconfig/network-scripts/ifcfg-$slaveb << EOB
+DEVICE="$slaveb"
+BOOTPROTO="none"
+ONBOOT="yes"
+MASTER="$bondname"
+SLAVE=yes
+USERCTL=no
+EOB
+} ## End create_bond
+
+function create_bond_with_dns {
+    local bondname=$1
+    local slavea=$2
+    local slaveb=$3
+    local name=$4
+    local cam=`get_mac $slavea`
+
+    # Setup modprobe.conf
+    echo "alias netdev-$bondname bonding" >> /etc/modprobe.d/bonding.conf
+
+    # Add the bonding bits to the file
+    cat > /etc/sysconfig/network-scripts/ifcfg-$bondname << EOF
+DEVICE="$bondname"
+BOOTPROTO="dhcp"
+DHCP_HOSTNAME="$name"
+IPV6INIT="no"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+USERCTL="no"
+PEERDNS="yes"
+BONDING_OPTS="mode=1 miimon=100"
+EOF
+
+    cat > /etc/sysconfig/network-scripts/ifcfg-$slavea << EOA 
+DEVICE="$slavea"
+BOOTPROTO="none"
+ONBOOT="yes"
+MASTER="$bondname"
+SLAVE=yes
+USERCTL=no
+EOA
+
+    cat > /etc/sysconfig/network-scripts/ifcfg-$slaveb << EOB
+DEVICE="$slaveb"
+BOOTPROTO="none"
+ONBOOT="yes"
+MASTER="$bondname"
+SLAVE=yes
+USERCTL=no
+EOB
+} ## End create_bond_with_dns
+
+#######################
+#### Start of main ####
+#######################
+
+## Get the HW Vendor
+HWVENDOR=`dmidecode -s system-manufacturer | tr '[A-Z]' '[a-z]'`
+
+## If the file /etc/tda/dont_run_network_setup exists then don't run the network setup
+if [ -f /etc/tda/dont_run_network_setup ]; then
+    echo "INFO: /etc/tda/dont_run_network_setup file exists. Network setup not running" >> ${INSTLOG}
+    exit 0
+fi
+
+## Clean up any interface files that are there. 
+mkdir -p /etc/sysconfig/network-scripts/backup
+for bkint in `ls -l /etc/sysconfig/network-scripts/ifcfg-eth* /etc/sysconfig/network-scripts/ifcfg-bond* /etc/sysconfig/network-scripts/route* | awk '{print $9}' | cut -d / -f 5`
+do
+    mv /etc/sysconfig/network-scripts/$bkint /etc/sysconfig/network-scripts/backup/$INPLACE.$bkint
+done
+
+## Clean up any bonding files that already exist.
+if [[ -f /etc/modprobe.d/bonding.conf ]]; then
+    rm /etc/modprobe.d/bonding.conf
+fi
+
+## Get the hostname
+if [ -f /etc/tda/env ]; then
+  MYHOSTNAME="`cat /etc/tda/env | grep HOSTNAME | cut -d'=' -f2`"
+else
+  MYHOSTNAME="`hostname`"
+fi
+
+SHORTNAME=`echo ${MYHOSTNAME} | cut -d . -f 1`
+
+## Setup the general network settings
+cat > /etc/sysconfig/network << _EOF
+NETWORKING_IPV6=no
+NETWORKING=yes
+HOSTNAME=${SHORTNAME}
+_EOF
+
+## Disbale IPv6
+echo "options ipv6 disable=1" > /etc/modprobe.d/ipv6.conf
+
+AUXINTS=""
+DATAINTS=""
+ERRAUX=""
+NOIPINTS=""
+
+## Check each NIC to determine which network they are on
+for netDevice in `/sbin/ifconfig -a | grep eth | awk '{print $1}'`
+do
+    echo "Working on interface ${netDevice} ..." >> ${INSTLOG}
+    stop_interface ${netDevice}
+    start_interface ${netDevice}
+    STATE=`ip link show ${netDevice} | grep ${netDevice} | grep "state DOWN"`
+
+    if [ "z${STATE}" == "z" ]; then
+	IPADDR="`/sbin/ifconfig ${netDevice} | grep "inet addr:" | awk '{print $2}' | cut -d: -f 2`"
+	NETMASK="`/sbin/ifconfig ${netDevice} | grep "inet addr:" | awk '{print $4}' | cut -d: -f 2`"
+
+	if [ "z${IPADDR}" != "z" ] ; then
+	    if echo ${IPADDR} | cut -d. -f1,2 | egrep -q '10.(135|127|175|158|159)' > /dev/null 2>&1; then
+		CIDRNET="`ipcalc -n ${IPADDR} ${NETMASK} | cut -d = -f 2`"
+		case "${CIDRNET}" in
+		    "10.135.128.0" )
+			echo -e "AUX Interface is PRD CT Client Util" >> ${INSTLOG}
+			AUXINTS="${netDevice} ${AUXINTS}"
+			AUXGW="10.135.128.1"
+			AUXNAT="10.135.1.0/24"
+			;;
+		    "10.158.128.0" )
+                        echo -e "AUX Interface is PRD TX Client Util" >> ${INSTLOG}
+                        AUXINTS="${netDevice} ${AUXINTS}"
+                        AUXGW="10.158.128.1"
+                        AUXNAT="10.158.1.0/24"
+                        ;;
+		    "10.127.128.0" )
+			echo -e "AUX Interface is PRD JC Client Util" >> ${INSTLOG}
+			AUXINTS="${netDevice} ${AUXINTS}"
+			AUXGW="10.127.128.1"
+			AUXNAT="10.127.1.0/24"
+			;;
+		    "10.175.128.0" )
+			echo -e "AUX Interface is NPE/SHR CT Client Util" >> ${INSTLOG}
+			AUXINTS="${netDevice} ${AUXINTS}"
+			AUXGW="10.175.128.1"
+			AUXNAT="10.175.1.0/24"
+			;;
+		    "10.135.160.0" )
+			echo -e "AUX Interface is PRD CT Associate Util" >> ${INSTLOG}
+			AUXINTS="${netDevice} ${AUXINTS}"
+			AUXGW="10.135.160.1"
+			AUXNAT="10.135.1.0/24"
+			;;
+		    "10.159.160.0" )
+                        echo -e "AUX Interface is PRD TX Associate Util" >> ${INSTLOG}
+                        AUXINTS="${netDevice} ${AUXINTS}"
+                        AUXGW="10.159.160.1"
+                        AUXNAT="10.159.1.0/24"
+                        ;;
+		    "10.127.160.0" )
+			echo -e "AUX Interface is PRD JC Associate Util" >> ${INSTLOG}
+			AUXINTS="${netDevice} ${AUXINTS}"
+			AUXGW="10.127.160.1"
+			AUXNAT="10.127.1.0/24" 
+			;;
+		    "10.175.160.0" )
+			echo -e "AUX Interface is NPE/SHR CT Associate Util" >> ${INSTLOG}
+			AUXINTS="${netDevice} ${AUXINTS}" 
+			AUXGW="10.175.160.1"
+			AUXNAT="10.175.1.0/24"
+			;;
+		    * ) 
+			echo -e "!!!!!WARNING: Non AUX Util interface!!!!!" >> ${INSTLOG}
+			echo -e "Network is ${CIDRNET}, please check with DNPS" >> ${INSTLOG}
+			ERRAUX="${netDevice} ${ERRAUX}"
+			;;
+		esac
+	    else
+		## NIC is a Data Highway Network
+		echo -e "Interface is Data Highway" >> ${INSTLOG}
+		DATAINTS="${netDevice} ${DATAINTS}"
+	    fi
+	else
+		## The NIC state is up, but there is no IP address, could it be heartbeat? 
+		echo -e "Interface ${netDevice} has a link, but no IP. Could it be a heartbeat?" >> ${INSTLOG}
+		NOIPINTS="${netDevice} ${NOIPINTS}"
+	fi
+	stop_interface ${netDevice}
+    fi
+done
+
+# Get interface counts
+pcnt=`echo $DATAINTS | wc -w`
+acnt=`echo $AUXINTS | wc -w`
+
+echo "DATA HIGHWAY NICS: $DATAINTS" >> ${INSTLOG}
+echo "AUX NICS: $AUXINTS" >> ${INSTLOG}
+echo "ERROR AUX NICS: $ERRAUX" >> ${INSTLOG}
+echo "NICS WITH NO IP: $NOIPINTS" >> ${INSTLOG}
+
+# There should be 4 possibilities that I know of:
+# a) hosts have both prod and aux networks
+# b) hosts only have an aux network
+# c) physical hosts and blades get 2 of each. VM's get one of each
+# d) VM's in the fenced environments and legacy VM's in JC will only have
+#    one prod interface and no AUX networks and are not bonded
+
+# NOTE Historically bond0 has been prd and bond1 has been AUX. While it doesn't
+# technically matter, lets try and standardize to that.
+
+# Go through each valid use case of prod vs aux interfaces. Add whether or
+# not it is bonded so that we can differentiate the configurations
+case "$pcnt-$acnt" in
+    # bonded data highway and aux interfaces ... all physical hosts
+    "2-2" )
+        create_bond_with_dns bond0 $DATAINTS ${SHORTNAME}
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create bond for $DATAINT" >> ${INSTLOG}; fi
+        create_bond bond1 $AUXINTS ${SHORTNAME}
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create bond for $AUXINTS" >> ${INSTLOG}; fi
+        create_static_route $AUXNAT $AUXGW bond1
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create static route $AUXNAT $AUXGW bond1" >> ${INSTLOG}; fi
+    ;;
+    # single data highway and aux interfaces 
+    "1-1" )
+        create_interface_with_dns $DATAINTS ${SHORTNAME}
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create interface $DATAINT"; fi
+        create_interface $AUXINTS ${SHORTNAME}
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create interface $AUXINTS" >> ${INSTLOG}; fi
+        create_static_route $AUXNAT $AUXGW $AUXINTS
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create static route $AUXNAT $AUXGW $AUXINTS" >> ${INSTLOG}; fi
+    ;;
+    # VM's in AUX only
+    "0-1" )
+        create_interface_with_dns $AUXINTS ${SHORTNAME}
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create interface for $AUXINTS">> ${INSTLOG}; fi
+	create_static_route "default" $AUXGW $AUXINTS
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create default route $AUXGW $AUXINTS" >> ${INSTLOG}; fi
+    ;;
+    # physical hosts in AUX only
+    # There could also be VMs with 2 aux nics since vCAC can't do single nic
+    # linux VMs for now
+    "0-2" )
+	case "$HWVENDOR" in 
+	vmware* ) 
+	    create_interface_with_dns eth0 ${SHORTNAME}
+	    if [ $? -ne 0 ]; then echo "FAILED: Can't create interface for $AUXINTS" >> ${INSTLOG}; fi
+	    create_static_route "default" $AUXGW eth0
+	    if [ $? -ne 0 ]; then echo "FAILED: Can't create default route $AUXGW $AUXINTS" >> ${INSTLOG}; fi
+	    ;;
+	* )
+	    create_bond_with_dns bond1 $AUXINTS ${SHORTNAME}
+	    if [ $? -ne 0 ]; then echo "FAILED: Can't create bond for $AUXINTS" >> ${INSTLOG}; fi
+	    create_static_route "default" $AUXGW bond1
+	    if [ $? -ne 0 ]; then echo "FAILED: Can't create default route $AUXGW $AUXINTS" >> ${INSTLOG}; fi
+	    ;;
+	esac
+    ;;
+    # One data highway interface and not bonded (fenced VM's or legacy nonprod VM)
+    "1-0" )
+        create_interface_with_dns $DATAINTS ${SHORTNAME}
+        if [ $? -ne 0 ]; then echo "FAILED: Can't create interface $DATAINTS" >> ${INSTLOG}; fi
+    ;;
+    # If the data highway and aux counts don't match then somthing might be wrong 
+    # or it's a non standard like quoteplant. Start at least one interface so we
+    # can at least ssh to the host.
+    * ) 
+	echo "!!!!WARNING: Number of data highway iterfaces $pcnt and Aux interfaces $acnt does not match current standards" >> ${INSTLOG}
+	echo "" >> ${INSTLOG}
+	echo "DATA HIGHWAY NICS: $pcnt $DATAINTS" >> ${INSTLOG}
+	echo "AUX NICS: $acnt $AUXINTS" >> ${INSTLOG}
+	echo "ERROR AUX NICS: $ERRAUX" >> ${INSTLOG}
+	echo "NICS WITH NO IP: $NOIPINTS" >> ${INSTLOG}
+
+	if [ "z${ERRAUX}" != "z" ]; then 
+	    echo "!!!!WARNING: Host has a non AUX util IP. Please verify this is correct!" >> ${INSTLOG}
+	fi
+
+	if [ $pcnt -gt 0 ]; then
+	    DEFAULTINT=`echo $DATAINTS | awk '{print $1}'`
+	elif [ $acnt -gt 0 ]; then
+	    DEFAULTINT=`echo $AUXINTS | awk '{print $1}'`
+	else
+	    DEFAULTINT=`echo $ERRAUX | awk '{print $1}'`
+	fi
+
+	echo "Bringing up failsafe NIC ${DEFAULTINT}" >> ${INSTLOG}
+
+	create_interface_with_dns ${DEFAULTINT} ${SHORTNAME}
+
+	/sbin/service network restart 
+	sleep 15
+	/sbin/ifconfig -a 2>&1 >> ${INSTLOG}
+
+	exit 1
+    ;;
+esac
+		    
+/sbin/service network restart 
+sleep 15
+/sbin/ifconfig -a 2>&1 >> ${INSTLOG}
+
+exit 0

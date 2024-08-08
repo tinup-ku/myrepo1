@@ -1,0 +1,124 @@
+
+#!/bin/bash
+
+  if [[ -d '/opt/collectd/bin/' ]]
+  then echo "`uname -n` has_collectd_installed" ; exit 0
+  fi
+
+  yumdir='/etc/yum.repos.d'
+  yumdirbackup='/root/yum.backup'
+  yumdirhold='/root/yum.backup.hold'
+  writesplunksource='http://gitlab.associatesys.local/tools/collectd/raw/master/templates/write_splunk.conf.erb'
+  writesplunkdest='/opt/collectd/etc/collectd.d/write_splunk.conf'
+  writesplunkback='/opt/collectd/etc/collectd.d/write_splunk.conf.orig'
+  writesplunktmp='/tmp/write_splunk.conf'
+
+  source /etc/tda/env
+  thisrelease="`rpm -q --queryformat '%{VERSION}' redhat-release-server`"
+
+  if [[ $thisrelease = '6Server' ]]
+  then urlstringaddons='/yumrepos/mrepo/rhel-6-x86_64/RPMS.tda-addons/' ; urlstringepel='/yumrepos/mrepo/rhel-6-x86_64/RPMS.epel/'
+  else urlstringaddons='/yumrepos/mrepo/rhel-7-x86_64/RPMS.tda-addons/' ; urlstringepel='/yumrepos/mrepo/rhel-7-x86_64/RPMS.epel/'
+  fi
+
+  # IF BUILD SERVER IS WRONG, THEN SET NEW BUILD SERVER TO DESIRED VALUE, WE'LL USE THIS NEXT.
+  case $BUILDSERVER in
+    'pkg-npe-ct-cl-1.associatesys.local') currentbuildserver="${BUILDSERVER}" ; newbuildserver='npectlvyumcl01.iteclientsys.local' ;;
+  esac
+
+  # IF NEWBUILDSERVER VAR IS SET, THAT MEANS BUILDSERVER WAS BAD, SO USE NEWBUILDSEVER AS BUILDSEVER.  BUILDSERVER SERVER IS USED NEXT.
+  if [[ ! -z $newbuildserver ]]
+  then BUILDSERVER="${newbuildserver}"
+  fi
+
+  mydomain="`hostname -f | awk -F '.' '{print $2}'`"
+  buildservershortname="`echo $BUILDSERVER | awk -F '.' '{print $1}'`"
+  yumserver="${buildservershortname}.${mydomain}.local"
+
+  mkdir -p $yumdirbackup $yumdirhold
+  cp ${yumdir}/* ${yumdirbackup}/
+
+  # IF NEWBUILDSERVER WAS SET, THAT MEANS THE ORIGINAL BUILDSERVER WAS BAD, AND PRESENT IN ALL THE .REPO FILES, WE HAVE TO CHANGE THAT.
+  if [[ ! -z $newbuildserver ]]
+  then sed -i "s/${currentbuildserver}/${yumserver}/g" ${yumdir}/*
+  fi
+
+  echo "-------------------------------------------------------------------------"
+  echo "...ENSURING EPEL AND ADDONS IS ENABLED"
+  echo "-------------------------------------------------------------------------"
+cat <<EOF >/etc/yum.repos.d/addons.repo
+[addons]
+name=addons
+baseurl=http://${yumserver}${urlstringaddons}
+enabled=1
+gpgcheck=0
+EOF
+
+cat <<EOF >/etc/yum.repos.d/epel.repo
+[epel]
+name=epel
+baseurl=http://${yumserver}${urlstringepel}
+enabled=1
+gpgcheck=0
+EOF
+
+  if [[ ! -f ${yumdirbackup}/rhel-postpatch.repo ]] ; then
+  echo "-------------------------------------------------------------------------"
+  echo "...DIDN'T FIND RHEL POST PATCH REPO, CREATING. "
+  echo "-------------------------------------------------------------------------"
+
+cat <<EOF >/etc/yum.repos.d/rhel-postpatch.repo
+[rhel-postpatch]
+name=TDA Internal Redhat Post Patched Channel
+baseurl=http://${yumserver}/yumrepos/mrepo/rhel-6.5-x86_64-2014-Q4/RPMS.updates/
+enabled=1
+gpgcheck=1
+gpgkey=http://${yumserver}/yumrepos/mrepo/gpgkeys/RPM-GPG-KEY-redhat
+EOF
+  fi
+
+  echo "-------------------------------------------------------------------------"
+  echo "...CLEANING REPOS "
+  echo "-------------------------------------------------------------------------"
+  yum clean all && yum makecache >/dev/null 2>&1
+  if [[ $? != '0' ]]
+  then echo "...CLEANING REPOS FAILED, BAILING.  CHECK YOUR .REPO FILES"
+       exit 1
+  fi
+
+  echo "-------------------------------------------------------------------------"
+  echo "...INSTALLING COLLECTD "
+  echo "-------------------------------------------------------------------------"
+  echo ""
+  echo ""
+  echo ""
+  yum install -y tda-capmgt-collectd
+  if [[ $? != '0' ]]
+  then echo "...COLLECTD INSTALL FAILED, BAILING."
+       exit 1
+  fi
+  echo ""
+  echo ""
+  echo ""
+
+  echo "-------------------------------------------------------------------------"
+  echo "...COPYING RPM PROVIDED COLLECTD SPLUNK WRITE FILE "
+  echo "-------------------------------------------------------------------------"
+  cp $writesplunkdest $writesplunkback
+  if [[ ! -f $writesplunkback ]]
+  then echo "...COLLECTD WRITE SPLUNK BACKUP FILE FAILED TO CREATE, BAILING."
+       exit 1
+  fi
+  echo ""
+
+  echo "-------------------------------------------------------------------------"
+  echo "...GRABBING COLLECTD SPLUNK WRITE ERB TEMPLATE AND COPYING TO DESTINATION "
+  echo "-------------------------------------------------------------------------"
+  wget $writesplunksource -O $writesplunktmp >/dev/null 2>&1
+  if [[ $? != '0' ]]
+  then echo "...COLLECTD WRITE SPLUNK FILE GRAB FAILED, BAILING."
+       exit 1
+  fi
+  cp $writesplunktmp $writesplunkdest
+  ls -l $writesplunkdest
+

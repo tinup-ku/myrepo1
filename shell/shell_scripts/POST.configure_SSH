@@ -1,0 +1,86 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 04.04.2012    J. Ritter       Created inital script
+# 
+#
+#==============================================================================
+
+. /etc/tda/env
+
+echo "Configuing SSH" >> ${INSTLOG}
+
+# Configure ssh/sshd parameters
+cp /etc/ssh/ssh_config /etc/ssh/ssh_config.$INPALCE
+awk ' BEGIN {
+# Stuff we care about in the conf file goes here
+sshdconf["Protocol"]=2;
+}
+# Go through each line and if it is something we care about, replace it
+# with the correct values
+{ for ( key in sshdconf ) {
+s="^#? *" key ".*"
+if ( $0 ~ s ) {
+found[key]=1
+print key " " sshdconf[key];
+next;
+}
+}
+print;
+}
+# If we didnt already find the entry in the file, make sure that it is
+# explicitely added to the bottom
+END {
+for ( key in sshdconf ) {
+if ( found[key] != 1 ) {
+print key " " sshdconf[key];
+}
+}
+}' < /etc/ssh/ssh_config > /etc/ssh/ssh_config.tmp
+cp /etc/ssh/ssh_config.tmp /etc/ssh/ssh_config
+rm -f /etc/ssh/ssh_config.tmp
+
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.$INPLACE
+awk ' BEGIN {
+# Stuff we care about in the conf file goes here
+#sshdconf["AuthorizedKeysFile"]="/etc/ssh/authorized_keys/%u";
+sshdconf["Protocol"]=2;
+sshdconf["X11Forwarding"]="yes";
+sshdconf["IgnoreRhosts"]="yes";
+sshdconf["HostbasedAuthentication"]="no";
+sshdconf["PermitRootLogin"]="without-password";
+sshdconf["PermitEmptyPasswords"]="no";
+sshdconf["Banner"]="/etc/issue";
+sshdconf["PrintMotd"]="yes";
+}
+# Go through each line and if it is something we care about, replace it
+# with the correct values
+{ for ( key in sshdconf ) {
+s="^#? *" key ".*"
+if ( $0 ~ s ) {
+found[key]=1
+print key " " sshdconf[key];
+next;
+}
+}
+print;
+}
+# If we didnt already find the entry in the file, make sure that it is
+# explicitely added to the bottom
+END {
+for ( key in sshdconf ) {
+if ( found[key] != 1 ) {
+print key " " sshdconf[key];
+}
+}
+}' < /etc/ssh/sshd_config > /etc/ssh/sshd_config.tmp
+cp /etc/ssh/sshd_config.tmp /etc/ssh/sshd_config
+rm -f /etc/ssh/sshd_config.tmp
+
+/sbin/service sshd restart
+
+exit 0

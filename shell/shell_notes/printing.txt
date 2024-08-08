@@ -1,0 +1,10 @@
+
+which reading a file entire line is not priting ( breaking at spaces )
+use below code:
+
+while read LINE
+do
+ echo $LINE
+done < txt1
+
+  ==========

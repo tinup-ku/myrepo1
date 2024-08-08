@@ -1,0 +1,78 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 07.17.2012	J. Wu		Created initial script to configure mailhubs
+# 09.09.2013	J. Wu		Updated to use $INPLACE
+#
+#==============================================================================
+
+# Configure SMTP
+
+echo "Configure SMTP" >> ${INSTLOG}
+
+function set_mailhub {
+    mhub=$1
+
+    if [ -f /etc/postfix/main.cf ]; then
+	cp /etc/postfix/main.cf /etc/postfix/main.cf.$INPLACE
+    fi
+
+    echo -e "\n ## TDA Mailhub Setup \n" >> /etc/postfix/main.cf
+    echo -e "relayhost = $mhub" >> /etc/postfix/main.cf
+}
+
+. /etc/tda/env
+
+case "${ENV}-${BUILDING}-${ASSCLI}" in
+    PRD-CT-ASSOCIATE )
+	set_mailhub ctmailhost.associatesys.local
+	;;
+    PRD-CT-CLIENTSYS )
+	set_mailhub ctmailhost.clientsys.local
+	;;
+    PRD-TX-ASSOCIATE )
+        set_mailhub txmailhost.associatesys.local
+        ;;
+    PRD-TX-CLIENTSYS )
+        set_mailhub txmailhost.clientsys.local
+        ;;
+    PRD-JC-ASSOCIATE )
+	set_mailhub jcmailhost.associatesys.local
+	;;
+    PRD-JC-CLIENTSYS )
+	set_mailhub jcmailhost.clientsys.local
+	;;
+    PRD-MW-ASSOCIATE )
+        set_mailhub jcmailhost.associatesys.local
+        ;;
+    PRD-MW-CLIENTSYS )
+        set_mailhub jcmailhost.clientsys.local
+        ;;
+    PRD-*-ASSOCIATE )
+        set_mailhub ctmailhost.associatesys.local
+        ;;
+    PRD-*-CLIENTSYS )
+        set_mailhub ctmailhost.clientsys.local
+        ;;
+    *-*-CLIENTSYS )
+	# If it's not PRD let's assume it will be non-prod
+	set_mailhub pteemlhub.pte-am.ameritrade.com
+	;;
+   *-*-ASSOCIATE )
+        # If it's not PRD let's assume it will be non-prod
+        set_mailhub pteemlhub.pte-am.ameritrade.com
+        ;;
+    * )
+	echo -e "ERROR Unknown combination ENV=${ENV} BLD=${BUILDING} AFF=${ASSCLI} Unable to setup mail \n" >> ${INSTLOG}
+	exit 1
+	;;
+esac
+
+# Restart postfix to reread the new config
+service postfix restart 
+
+exit 0

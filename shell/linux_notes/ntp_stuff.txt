@@ -1,0 +1,39 @@
+
+Checking NTP:
+
+root@dev01lvarsapp01 ~]# echo "Example of a BAD host"
+[root@dev01lvarsapp01 ~]# ntpq -p
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
+prdtxlsntpcf04. .INIT.          16 u    - 1024    0    0.000    0.000   0.000
+prdtxlsntpcf05. .INIT.          16 u    - 1024    0    0.000    0.000   0.000
+prdtxlsntpcf06. .INIT.          16 u    - 1024    0    0.000    0.000   0.000
+[root@dev01lvarsapp01 ~]#
+[root@dev01lvarsapp01 ~]# ntpstat
+unsynchronised
+  polling server every 8 s
+
+[root@dev01lvarsapp01 ~]# echo $?
+1
+
+[root@dev01lvarsapp01 ~]# echo "Exit code is non 0 above"
+
+
+   ===================================================
+
+[nep179@prdtxlvulsegw01 ~]$ echo "Example of a GOOD host"
+[nep179@prdtxlvulsegw01 ~]$ ntpq -p
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
++prdtxlsntpaf01. 10.157.120.125   2 u   94 1024  377    0.278    0.025   0.063
++prdtxlsntpaf02. 10.157.120.125   2 u  815 1024  377    0.272    0.022   0.038
+*prdtxlsntpaf03. 10.157.120.125   2 u    8 1024  377    0.296   -0.027   0.060
+
+[nep179@prdtxlvulsegw01 ~]$ ntpstat
+synchronised to NTP server (10.159.161.68) at stratum 3
+   time correct to within 41 ms
+   polling server every 1024 s
+[nep179@prdtxlvulsegw01 ~]$  echo $?
+0
+[nep179@prdtxlvulsegw01 ~]$ echo "Exit code is 0 - good host"
+

@@ -1,0 +1,116 @@
+
+   25  df -h
+   26  fdisk -l |grep sd
+   27  lvs
+   28  pvs
+   29  echo 1 > /sys/block/sdb/device/rescan
+   30  echo -e "n\np\n2\n\n\nt\n2\n8e\nw" | fdisk /dev/sdb
+   31  partprobe
+   32  lvs
+   33  pvs
+   34  fdisk /dev/sdb
+   35  pvs
+   36  pvremove /dev/sdb1
+   37  vgs
+   38  vgremove appvg
+   39  vgs
+   40  pvremove /dev/sdb1
+   41  pvcreate /dev/sdb1
+   42  pvs
+   43  pwd
+   44  vgcreate appvg /dev/sdb1
+   45  vgs
+   46  puppet agent -t
+   47  df -h
+   48  vgs
+   49  lvs
+   50  pvs
+   51  puppet agent -t
+   52  pvs
+   53  fdisk -l |grep sd
+   54  echo -e "n\np\n2\n\n\nt\n2\n8e\nw" | fdisk /dev/sdc
+   55  partprobe
+   56  pvcreate /dev/sdc1
+   57  fdisk /dev/sdc
+   58  echo -e "n\np\n1\n\n\nt\n1\n8e\nw" | fdisk /dev/sdc
+   59  partprobe
+   60  pvcreate /dev/sdc1
+   61  vgextend  appvg /dev/sdc1
+   62  fdisk -l |grep sd
+   63  echo -e "n\np\n1\n\n\nt\n1\n8e\nw" | fdisk /dev/sdd
+   64  partprobe
+   65  pvcreate /dev/sdd1
+   66  vgextend  appvg /dev/sdd1
+   67  echo -e "n\np\n1\n\n\nt\n1\n8e\nw" | fdisk /dev/sde
+   68  partprobe
+   69  pvcreate /dev/sde1
+   70  vgextend  appvg /dev/sde1
+   71  pvs
+   72  vgs
+   73  puppet agent -t
+   74  df -h
+   75  umount /app/logdata
+   76   vgremove appvg
+   77  fdisk /dev/sdb
+   78  pvcreate /dev/sdb /dev/sdc /dev/sdd /dev/sde
+   79  pwd
+   80  pvs
+   81  vgcreate appvg /dev/sdb /dev/sdc /dev/sdd /dev/sde
+   82  vgs
+   83  fdisk -l |grep sd
+   84  df -h
+   85  fdisk /dev/sdc
+   86  fdisk /dev/sdd
+   87  fdisk /dev/sde
+   88  vgcreate appvg /dev/sdb /dev/sdc /dev/sdd /dev/sde
+   89  vgs
+   90  pvs
+   91  lvcreate -n data_lv -L +9g appvg
+   92  lvcreate -n data1_lv -L +11g appvg
+   93  lvcreate -n data2_lv -L +15g appvg
+   94  lvcreate -n data3_lv -L +52g appvg
+   95  mkfs.xfs /dev/mapper/appvg-data1_lv
+   96  mkfs.xfs /dev/mapper/appvg-data2_lv
+   97  mkfs.xfs /dev/mapper/appvg-data_lv
+   98  mkfs.xfs /dev/mapper/appvg-data3_lv
+   99  echo "/dev/appvg/data_lv     /app      xfs defaults        1       2" >> /etc/fstab
+  100  echo "/dev/appvg/data1_lv     /app/tibco      xfs defaults        1       2" >> /etc/fstab
+  101  echo "/dev/appvg/data2_lv     /app/logdata      xfs defaults        1       2" >> /etc/fstab
+  102  echo "/dev/appvg/data3_lv     /app/tibco/TIBCO_HOME      xfs defaults        1       2" >> /etc/fstab
+  103  mkdir -p  /app
+  104  mount /app
+  105  mkdir -p /app/tibco /app/logdata
+  106  mount /app/tibco
+  107  mount /app/logdata
+  ======================
+
+ 870  vi beslist1
+  871  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "df -hT /var" –forkit
+  872  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "pvs" –forkit
+  873  sudo /root/sudossh ptectlporadb22
+  874  nslookup 10.175.99.239
+  875  nslookup 10.175.223.250
+  876  > beslist1
+  877  vi beslist1
+  878  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "pvs" –forkit
+  879  > beslist1
+  880  vi beslist1
+  881  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "pvs" –forkit
+  882  > beslist1
+  883  vi beslist1
+  884  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "lvextend -L +5G /dev/mapper/sysvg-var_lv" –forkit
+  885  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "xfs_growfs /dev/mapper/sysvg-var_lv" –forkit
+  886  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "df -hT /var" –forkit
+  887  > beslist1
+  888  vi beslist1
+  889  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "pvs" –forkit
+  890  vi beslist1
+  891  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "lvextend -L +4G /dev/mapper/sysvg-var_lv" –forkit
+  892  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "xfs_growfs /dev/mapper/sysvg-var_lv" –forkit
+  893  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "df -hT /var" –forkit
+  894  > beslist1
+  895  vi beslist1
+  896  sudo /ulse/bin/sweep --byfile /home/nat525/beslist1 --command "df -hT /var" –forkit
+
+
+ ==========================

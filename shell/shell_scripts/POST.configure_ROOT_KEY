@@ -1,0 +1,31 @@
+#!/bin/bash -x
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 06.25.2012    J. Wu		Add ulse key to root
+#
+#==============================================================================
+
+echo "Add ulse ssh public key to root" >> ${INSTLOG}
+
+. /etc/tda/env
+
+if [ ! -d /root/.ssh ]; then
+    mkdir /root/.ssh 
+    chmod 755 /root/.ssh
+fi
+
+if [ ! -f /root/.ssh/authorized_keys ]; then
+    touch /root/.ssh/authorized_keys
+    chmod 644 /root/.ssh/authorized_keys
+fi
+
+curl http://${BUILDSERVER}/publickeys/sudossh.pubkey >> /root/.ssh/authorized_keys 
+if [ $? -ne 0 ]; then
+    echo "!!!!!FAILED: Unbale to install public key from ${BUILDSERVER}" >> ${INSTLOG}
+    exit 1
+fi
+
+exit 0
