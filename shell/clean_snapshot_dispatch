@@ -1,0 +1,78 @@
+#!/bin/bash
+##############################################################################
+# https://jiradomain1/browse/TOS-14290
+# Background:
+# 1. /opt/splunk/var/run/splunk/snapshot/*.bundle taking lots of disk space
+#    due to large users/apps .csv lookups have negative impact on SH cluster.
+# 
+# 2. ${SPLUNK_BIN}/splunk cmd splunkd clean-dispatch /tmp -24@h
+#    doesn't work due to
+# --------------------
+# https://community.splunk.com/t5/Deployment-Architecture/Is-it-best-practice-to-clear-the-entire-dispatch-directory-when/m-p/225632 
+# --------------------
+# The recommendation,
+# https://community.splunk.com/t5/Splunk-Search/Dispatch-directory-is-full-How-do-we-clear-it-up/td-p/283206
+##############################################################################
+# user_ | TOS Platform Splunk
+SNAP_SHOT=/opt/splunk/var/run/splunk/snapshot
+DISPATCH=/opt/splunk/var/run/splunk/dispatch
+ 
+cd ${SNAP_SHOT} && {
+   # Check the total bundle. Ignore if <=2
+   total_bundle=`echo *.bundle|wc -w`
+   [[ ${total_bundle} -gt 2 ]] && {
+      # Save the latest 2 .bundle. Get the preference bundle
+      file_=`ls -ltr|tail -3|head -1|awk '{print $NF}'`
+      echo
+      case $1 in
+        -list )
+                echo "1. ${SNAP_SHOT}:"
+                echo
+                echo "Here are .bundle need to be cleaned up:"
+                find . -name "*.bundle" ! -newer ${file_} -exec ls -ld {} + 
+                echo
+                echo "Note:"
+                echo "Those .bundle including,"
+                echo "List of /opt/splunk/etc/[users/apps] .csv lookups size > 50MB:"
+                echo "--------------------------------------------------------------"
+                cd /opt/splunk/etc && \
+                 find users apps -type f -name "*.csv" -size +50M  -exec du -hs {} +
+                echo
+                ;;
+        -clean )
+                echo "1. Here are .bundle need to be cleaned up:"
+                find . -name "*.bundle" ! -newer ${file_} -exec ls -ld {} +
+                echo
+                ;;
+             * )
+                echo "Usage: $0 [-clean|-list]"
+                exit 1
+                ;;
+       esac 
+   }
+}
+
+cd ${DISPATCH} && {
+      # Identify splunk artifacts older than 3 days
+      echo
+      case $1 in
+        -list )
+                total_artifacts=$(ls|wc -l)
+                echo "2. ${DISPATCH}: Total ${total_artifacts} artifacts"
+                find .  -maxdepth 1 -type d  -path ./_splunktemps -prune -o ! -mmin -4320 -exec ls -ld {} + >/tmp/$$ 2>&1
+                artifacts=$(wc -l < /tmp/$$)
+                echo "List of splunk ${artifacts} artifacts older than 3 days need to clean up: /tmp/$$"
+                echo
+                ;;
+        -clean )
+                # Clean up splunk search artifacts older than 3 days"
+                find . -maxdepth 1 -type d  -path ./_splunktemps -prune -o ! -mmin -4320 -exec rm -rf {} + >/dev/null 2>&1
+                echo
+                ;;
+             * )
+                echo "Usage: $0 [-clean|-list]"
+                exit 1
+                ;;
+       esac
+}
+

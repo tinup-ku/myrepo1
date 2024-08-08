@@ -1,0 +1,186 @@
+#!/bin/bash
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%F_%H%M')
+env_=`uname -n|grep -o '...$'`
+deployer=$(uname -n)
+#users_list="grp1@example.com"
+users_list="grp2@example.com"
+
+case ${deployer} in
+   # New Preprod SH
+   host0982some_loc  )
+                 F5_fqdn=splunk-preproddomain1
+                 ;;
+   # Prod
+   host0860some_loc  )
+                 F5_fqdn=splunk-admindomain1
+                 ;;
+   # Prod Splunk Weblogs Extract SH Deployer
+   host0983some_loc  )
+                 F5_fqdn=splunk-extractsdomain1
+                 ;;
+   # PROD ES
+   host4615some_loc  )
+                 F5_fqdn=splunk-esdomain1
+                 ;;
+   # PROD ITSI
+   host4744some_loc  )
+                 F5_fqdn=splunk-itsidomain1
+                 ;;
+   # PROD RESTAPI
+   some_loc11-010964 )
+                 F5_fqdn=splunk-restapidomain1
+                 ;;
+   # DEV
+   cud2-008139  )
+                 F5_fqdn=splunk-dev.devdomain1
+                 search_peer=cud1-011646domain1
+                 ;;
+   # QA Core
+   cud2c-005235 )
+                 F5_fqdn=splunk-qa.devdomain1
+                 ;;
+   # QA ES
+   cud2-006273 )
+                 search_peer=cud1-008646domain1
+                 ;;
+   # QA ITSI
+   cud1-008629 )
+                 search_peer=cud1-008627domain1
+                 ;;
+   # QA RESTAPI
+   cud1-014780 )
+                 F5_fqdn=splunk-restapi-qa.devdomain1
+                 ;;
+   # DEV RESTAPI
+   cud1-014783 )
+                 F5_fqdn=splunk-restapi-dev.devdomain1
+                 ;;
+   # PDC1_TEST_SH_Search_Deployer
+   host3278pdv  )
+                 F5_fqdn=splunktest.devdomain1
+                 ;;
+   # PDC3_Training_SH_Deployer
+   host3277pdv  )
+                 F5_fqdn=splunk-lab.devdomain1
+                 search_peer=host3283pdv.devdomain1
+                 ;;
+           * )
+               echo "$(uname -n) is not a Search Head Deployer. Abort."
+               exit
+               ;;
+esac
+
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+# Service Account only.
+case ${env_} in
+   pdv | bdv ) uid=svc_act2
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 ) uid=svc_act1
+               key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                   some_loc1* ) uid=svc_act1
+                           gid=unx_9998_access
+                           key=$prod
+                           ;;
+                   cud*| cut* ) uid=svc_act2
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=$dev
+                           ;;
+               esac
+               ;;
+esac
+
+# Identify SH captain
+[[ -n ${F5_fqdn} ]] && \
+search_peer_=$(curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g')
+
+if [[ -z ${search_peer_} ]]
+then
+  echo "INFO: Can't resolve Search Head peer captain via F5 ${F5_fqdn}. Using ${search_peer} instead."
+else
+  search_peer=${search_peer_}
+fi
+
+[[ -z ${search_peer} ]] && {
+  echo "ERROR: Can't identify search peer via F5 ${F5_fqdn}. Abort"
+  exit
+}
+
+if [[ "`whoami`" != "${uid}" ]]
+then
+   echo "Running `basename $0` as ${uid} only. Abort."
+   mailx -s "${HOSTNAME}:$PWD: Running `basename $0` as ${uid} only. Abort." ${users_list} < $PWD/nohup.out
+   exit
+fi
+
+#exit 0
+
+if [[ -f /var/tmp/push_bundle.LCK ]]
+then
+   {
+     # Check /var/tmp/push_bunble.PID PID
+     push_bundle_PID=`cat /var/tmp/push_bunble.PID`
+     lsof -p ${push_bundle_PID} >/dev/null 2>&1
+     if [[ "$?" = "0" ]]
+     then
+        echo "push_bundle is running under PID: ${push_bundle_PID}"
+        exit
+     else
+        # Clean up
+        rm -f /var/tmp/push_bundle.LCK >/dev/null 2>&1
+     fi
+   } | tee /tmp/push_bundle.LCK.$$
+   mailx -s "`uname -n`:/usr/local/push_bundle. An attempt to run while push_bundle is running" ${users_list} < /tmp/push_bundle.LCK.$$
+else
+   touch /var/tmp/push_bundle.LCK
+
+   {
+   ${SPLUNK_BIN}/splunk login -auth admin:${key}
+   echo
+   echo "Pushing Deployment bundle to https://${F5_fqdn} Search Head peers."
+   echo "This might take sometime..."
+   echo
+   echo "START: `date`"
+
+   # Add -preserve-lookups true -searchable true: 08/06/2019
+   # https://docs.splunk.com/Documentation/Splunk/7.2.3/DistSearch/RestartSHC#Use_searchable_rolling_restart
+
+   #nohup ${SPLUNK_BIN}/splunk apply shcluster-bundle -target https://${search_peer}:8089 --answer-yes --no-prompt -preserve-lookups true -searchable true &
+
+   nohup ${SPLUNK_BIN}/splunk apply shcluster-bundle -target https://${search_peer}:8089 --answer-yes --no-prompt -preserve-lookups true &
+   job_pid=$!
+   echo "${job_pid}" > /var/tmp/push_bunble.PID
+   echo "Background process id for the job: ${job_pid}"
+   } 2>&1 | tee /var/tmp/`basename $0`.${date_}
+
+   # Background job complete then notify.
+   while [ 1 ]
+   do
+     # Every 3 minutes, check if push_bunble.PID is still running
+     ps -p `cat /var/tmp/push_bunble.PID` >/dev/null
+     if [[ "$?" != "0" ]]
+     then
+        grep 'Bundle has been pushed successfully to all the cluster members' /var/tmp/`basename $0`.${date_} >/dev/null
+        if [[ "$?" = "0" ]]
+        then
+          echo "END: `date`" >> /var/tmp/`basename $0`.${date_}
+          mailx -s "$(uname -n): Bundle has been pushed successfully to all the cluster members" ${users_list} < /var/tmp/`basename $0`.${date_}
+          rm -f /var/tmp/push_bundle.LCK
+          exit
+        else
+          echo "END: `date`" >> /var/tmp/`basename $0`.${date_}
+          mailx -s "$(uname -n): There's an issue with shcluster-bundle" ${users_list} < /var/tmp/`basename $0`.${date_}
+          rm -f /var/tmp/push_bundle.LCK
+          exit
+        fi
+     else
+        sleep 3m
+     fi
+   done
+fi

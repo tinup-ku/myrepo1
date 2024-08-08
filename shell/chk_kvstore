@@ -1,0 +1,7 @@
+#!/bin/ksh
+SPLUNK_BIN=/opt/splunk/bin
+
+${SPLUNK_BIN}/splunk login -auth admin:$(uname -n)_admin
+
+# Get a list of all Search peers
+/opt/splunk/bin/splunk show kvstore-status|grep status

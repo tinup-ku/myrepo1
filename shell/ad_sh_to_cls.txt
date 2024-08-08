@@ -1,0 +1,94 @@
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%a%H%M_%m%d%Y')
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+set_env ()
+{
+   case ${env__} in
+        PR|pr|pR|Pr )
+                      F5_fqdn=my.test.domain
+                      SH_Deployer=deployer_server
+                      secret=some_key
+                      shcluster_label=cluster_example
+                      ;;
+                X|x )
+                      F5_fqdn=my.test.domain1
+                      SH_Deployer=deployer_server
+                      secret=some_key
+                      shcluster_label=cluster_example
+                      ;;
+                  * )
+                      echo -en "Enter ${bold_yellow}PR${reset_color}, ${bold_yellow}P${reset_color},${bold_yellow}E|I|X${reset_color}. Try again."
+                      exit
+                      ;;
+   esac
+}
+
+get_key ()
+{
+  {
+    eval `gpg --batch --passphrase test -quiet --no-verbose -d en_flle` >/dev/null 2>&1
+  } 2>/dev/null
+
+  case ${env_} in
+     env1 | env2 ) uid=service_id1
+                 key=${xya}
+                 ;;
+      env3  ) uid=service_id2
+                             key=${xyz}
+                 ;;
+             * )
+                 ;;
+  esac
+
+
+}
+
+get_captain ()
+{
+  captain=$(curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g')
+  echo captain=$captain
+}
+
+##########
+# M A I N
+##########
+echo -n "Enter new Search Head hostname (w/o FQDN)? "
+read sh
+sh_fqdn=$(host ${sh}|awk '{print $1}')
+env_=$(echo ${sh}|grep -o '...$')
+
+echo -en "Is $sh [${bold_yellow}PR${reset_color}]e-Prod, [${bold_yellow}P${reset_color}]ROD, [${bold_yellow}E${reset_color}]S, [${bold_yellow}I${reset_color}]TSI, or WebLog E[${bold_yellow}X${reset_color}]tract Search Head? "
+read env__
+set_env ${sh}
+get_key
+get_captain
+
+[[ -z ${captain} ]] && {
+    echo "Captaincy not identified. Trying again..."
+    while [ 1 ]
+    do
+      sleep 2
+      get_captain
+      [[ -n ${captain} ]] && break
+    done
+}
+
+echo -n "Is ${sh_fqdn} initialized via \`initialize_SH\` (Y|N)? "
+read ans
+
+case ${ans} in
+     Y|y )
+           echo "On https://${F5_fqdn}'s captain, ${captain}, adding ${sh_fqdn}. Please wait"
+           ssh -q ${captain} "su - ${uid} -c \"${SPLUNK_BIN}/splunk add shcluster-member -new_member_uri https://${sh_fqdn}:8089 -auth admin:${key}\" "
+           ;;
+       * )
+           echo "On ${sh}, as ${uid}, run \`initialize_SH\`"
+           echo "Abort. Exit"
+           ;;
+esac
+
