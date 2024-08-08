@@ -1,9 +1,0 @@
-for i in /app/tomcat/*/bin/setenv.sh ; do cp $i ${i}__appd-`date +%A-%b-%e-%Y__AT__%I.%M.%p` ; done
-
-use date like:
-
-For example:
-myfile.bkp_`date +%m%e_%I.%M.%S`
-
-Others:
-date '+%F_%H%M%S'

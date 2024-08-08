@@ -1,4 +1,0 @@
-
-log rotation one line: ( delete all dirs which are changed 20 days ago )
-
-find /etc/puppetlabs/code/ucm/prdtxlvpptapp01_bkup/cert_backup_puppet -mindepth 1 -maxdepth 1 -type d -ctime +20  | xargs rm -rf
