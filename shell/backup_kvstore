@@ -1,0 +1,117 @@
+#!/bin/bash
+#################################################################################
+#################################################################################
+SPLUNK_BIN=/opt/splunk/bin
+env_=`uname -n|grep -o '...$'`
+date_=$(date '+%a%H%M_%m%d%Y')
+KVSTORE_BACKUP=/opt/splunkindex_data/kvstorebackup
+KVSTORE_LOG=/var/tmp/LOG/Kvstore
+
+
+[[ ! -d ${KVSTORE_LOG} ]] && mkdir -p ${KVSTORE_LOG}
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+case ${env_} in
+   pdv | bdv ) uid=svc_act2
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=svc_act1
+               key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                   some_loc1* ) uid=svc_act1
+                           gid=unx_9998_access
+                           key=$prod
+                           ;;
+                   cud*| cut* ) uid=svc_act2
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=$dev
+                           ;;
+               esac
+               ;;
+esac
+
+[[ "$(whoami)" = "root" ]] && echo "Run as ${uid} ONLY. Abort" && exit
+
+check_kvstorebackup_fs_size ()
+{
+  cd ${KVSTORE_BACKUP} && {
+     percent_Use=$(df -hPl .|grep -v 'Mounted'|awk '{print $(NF -1)}'|sed 's/%//g')
+     [[ "${percent_Use}" -ge 85 ]] && {
+        echo "ERROR: ${KVSTORE_BACKUP} %Use is > 85%. Kvstore Backup Abort."
+        exit
+     }
+  }
+}
+
+{
+# 1. Check kvstore status 
+status=`${SPLUNK_BIN}/splunk login -auth admin:$key;${SPLUNK_BIN}/splunk show kvstore-status|awk '/status/{print $NF}'`
+if [[ "${status}" = "ready" ]]
+then
+  # 2. Check replicationStatus
+  # curl -k -u admin:${key} https://localhost:8089/services/kvstore/status |grep -B1 standalone|awk '/replicationStatus/{print $0}'
+  replicationStatus=`${SPLUNK_BIN}/splunk login -auth admin:$key;${SPLUNK_BIN}/splunk show kvstore-status|grep -B2 'status'|grep -v 'standalone'|sed 's/[[:space:]]//g'|grep replicationStatus|awk -F: '{print $NF}'`
+
+  date
+  case ${replicationStatus} in
+       KVstorecaptain )
+                        check_kvstorebackup_fs_size
+                        echo "Backing up Search Head ${replicationStatus}"
+                        ${SPLUNK_BIN}/splunk backup kvstore -archiveName $(uname -n)_KVstorecaptain_${date_} 
+                        echo
+                        echo "Let's wait until backup complete..."
+                        # Checking kvstore backup status
+                        while [ 1 ]
+                        do
+                          sleep 3
+                          backup_status=`${SPLUNK_BIN}/splunk login -auth admin:$key;${SPLUNK_BIN}/splunk show kvstore-status|awk  '/backupRestoreStatus/{print $NF}'`
+                          [[ "${backup_status}" = "Ready" ]] && {
+                             echo "$(uname -n): Backing up kvstore ${replicationStatus} COMPLETED."
+                             break
+                          }
+                        done
+                        echo "OUTPUT: ${KVSTORE_BACKUP}" 
+                        cd ${KVSTORE_BACKUP} && ls -l $(uname -n)_KVstorecaptain_${date_}*
+                        ;;
+       Non-captainKVstoremember )
+                                  # Is it SH captain?
+                                  captain=$(${SPLUNK_BIN}/splunk list shcluster-members -auth admin:{key}|grep -A1 'is_captain:1'|tail -1|awk -F: '{print $2}')
+                                  echo ${captain}|grep -q `uname -n`
+                                  if [[ "$?" = "0" ]]
+                                  then
+                                      echo "Backing up Search Head Captain kvstore"
+                                      ${SPLUNK_BIN}/splunk backup kvstore -archiveName $(uname -n)_SHCaptainKVstore_${date_}
+                                      echo
+                                      echo "Let's wait until backup complete..."
+                                      # Checking kvstore backup status
+                                      while [ 1 ]
+                                      do
+                                        sleep 3
+                                        backup_status=`${SPLUNK_BIN}/splunk login -auth admin:$key;${SPLUNK_BIN}/splunk show kvstore-status|awk  '/backupRestoreStatus/{print $NF}'`
+                                        [[ "${backup_status}" = "Ready" ]] && {
+                                           echo "$(uname -n): Backing up Search Head Captain kvstore COMPLETED."
+                                           break
+                                        }
+                                      done
+                                      echo "OUTPUT: ${KVSTORE_BACKUP}"
+                                      cd ${KVSTORE_BACKUP} && ls -l $(uname -n)_SHCaptainKVstore_${date_}*
+                                  else
+                                      echo "$(uname -n): Neither a SH Captain nor KVstorecaptain. Kvstore backup ignored."
+                                  fi
+                        ;;
+                    * )
+                        echo "WARNING: replicationStatus: ${replicationStatus} is neither KVstorecaptain nor Non-captainKVstoremember. Kvstore backup abort."
+                        echo "Refer to Splunk link below for details."
+                        echo "https://docs.splunk.com/Documentation/Splunk/9.0.4/Admin/TroubleshootKVstore"
+                        exit
+                        ;;
+  esac
+  date
+else
+  echo "$(uname -n): Issue with kvstore status is NOT in ready mode. Kvstore Backup abort."
+  exit
+fi
+} | tee ${KVSTORE_LOG}/`basename $0`.${date_}.OUT

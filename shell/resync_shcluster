@@ -1,0 +1,51 @@
+#!/bin/bash
+SPLUNK_BIN=/opt/splunk/bin
+env_=`uname -n|grep -o '...$'`
+users_list="user1@example.com,user2@example.com"
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+case ${env_} in
+   pdv | bdv ) uid=svc_act2
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 ) uid=svc_act1
+               key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                   some_loc14* ) uid=svc_act1
+                           gid=unx_9998_access
+                           key=$prod
+                           ;;
+                   cud4*| cut4* ) uid=svc_act2
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=$dev
+                           ;;
+               esac
+               ;;
+esac
+
+if [[ "`whoami`" != "${uid}" ]]
+then
+   echo
+   echo "Running `basename $0` as ${uid} only. Abort."
+   echo
+   exit
+fi
+
+captain=`${SPLUNK_BIN}/splunk list shcluster-members -auth admin:${key}|grep -A1 'is_captain:1'|tail -1|awk -F: '{print $2}'`
+
+{
+  date
+  echo "captain=$captain"
+  echo "`uname -n`: Synchronizing Splunk apps. Please wait ..."
+  ${SPLUNK_BIN}/splunk resync shcluster-replicated-config -auth admin:${key}
+  date
+} | tee /tmp/$$ 
+[[ -f /tmp/$$ ]] && {
+   mailx -s "`uname -n`: ${SPLUNK_BIN}/splunk resync shcluster-replicated-config" ${users_list} < /tmp/$$
+   rm -f /tmp/$$ >/dev/null 2>&1
+}
+

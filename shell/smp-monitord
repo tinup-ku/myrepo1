@@ -1,0 +1,318 @@
+#!/bin/bash
+
+DEBUG=false
+
+trap 'process_signal SIGINT' SIGINT
+trap 'process_signal SIGTERM' SIGTERM
+
+process_signal() {
+    echo "Exit on signal $1"
+    logger -t $mytag "Exit on signal $1"
+    [ -f "/run/${myname}.pid" ] && rm "/run/${myname}.pid"
+    exit 0
+}
+
+print_debug() {
+    whatiam="$1"; tty="$2"
+    [[ "$tty" != "not a tty" ]] && {
+        echo "" >$tty
+        echo "$whatiam, PID $$" >$tty
+        ps -o pid,sess,pgid -p $$ >$tty
+        tty >$tty
+    }
+}
+
+me_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+me_FILE=$(basename $0)
+myname=$(basename $0)
+mypid=$$
+mytag="${myname}.${mypid}"
+repairscript='/usr/local/bin/salt_repair_script.sh'
+repairscript_log='/var/log/salt_repair_script.log'
+default_maxhealthcheckmiss=18 #this is roughly 1.5 hours
+maxhealthcheckmiss=$default_maxhealthcheckmiss
+update_script='/tmp/update_minion.sh'
+checkinterval=300
+defunct_count=0
+
+cd /
+
+TEST=$(ps -ef | grep "$myname monitoring$" | grep -v grep | grep -v " $mypid ")
+if [ -n "$TEST" ]
+then
+  thepid=$(echo "$TEST" | awk '{print $2}')
+  echo "Already running as $TEST"
+  logger -t $mytag Unable to start - already running as PID $thepid.
+  exit 1
+fi
+
+#### CHILD HERE --------------------------------------------------------------------->
+if [ "$1" = "child" ] ; then   # 2. We are the child. We need to fork again.
+    shift; tty="$1"; shift
+    $DEBUG && print_debug "*** CHILD, NEW SESSION, NEW PGID" "$tty"
+    umask 0027
+    $me_DIR/$me_FILE monitoring </dev/null >/dev/null 2>/dev/null &
+    #$me_DIR/$me_FILE monitoring "$tty" "$@" </dev/null >/dev/null 2>/dev/null &
+    $DEBUG && [[ "$tty" != "not a tty" ]] && echo "CHILD OUT" >$tty
+    exit 0
+fi
+
+##### ENTRY POINT HERE -------------------------------------------------------------->
+if [ "$1" != "monitoring" ] ; then # 1. This is where the original call starts.
+    tty=$(tty)
+    $DEBUG && print_debug "*** PARENT" "$tty"
+    setsid $me_DIR/$me_FILE child "$tty" "$@" &
+    $DEBUG && [[ "$tty" != "not a tty" ]] && echo "PARENT OUT" >$tty
+    exit 0
+fi
+
+##### RUNS AFTER CHILD FORKS (actually, on Linux, clone()s. See strace -------------->
+                               # 3. We have been reforked. Go to work.
+exec >/tmp/$myname.stdout.log
+exec 2>/tmp/$myname.stderr.log
+exec 0</dev/null
+
+chmod 640 /tmp/$myname.stdout.log
+chmod 640 /tmp/$myname.stderr.log
+unset LD_LIBRARY_PATH
+
+shift; tty="$1"; shift
+
+$DEBUG && print_debug "*** DAEMON" "$tty"
+                               # The real stuff goes here. To exit, see fun (above)
+$DEBUG && [[ "$tty" != "not a tty" ]]  && echo NOT A REAL DAEMON. NOT RUNNING WHILE LOOP. >$tty
+
+logger -t $mytag Starting up.
+
+if [ -d '/run' ]
+then
+  echo $mypid > /run/${myname}.pid
+else
+  echo $mypid > /var/run/${myname}.pid
+fi
+
+TEST=$(uname -r)
+if [ -n "$(echo $TEST | grep '\.el[789]')" ]
+then
+  statuscmd='systemctl status salt-minion'
+  restartcmd='systemctl restart salt-minion'
+  enablecmd='systemctl enable salt-minion'
+
+  #TEST=$(rpm -q --qf '%{VERSION}\n' salt-minion)
+  #[ $? -ne 0 ] && TEST=$(salt-minion --version)
+  #[ -n "$(echo $TEST | grep 3005)" ] && minprocs=2 || minprocs=3
+  minprocs=2
+  maxprocs=10
+
+elif [ -n "$(echo $TEST | grep '\.el[56]')" ]
+then
+  statuscmd='service salt-minion status'
+  restartcmd='service salt-minion restart'
+  enablecmd='chkconfig salt-minion on'
+  minprocs=1
+  maxprocs=10
+else
+  logger -t $mytag "WARN - unsupported linux ($TEST), service management unavailable."
+  statuscmd=''
+  restartcmd=''
+  enablecmd=''
+  minprocs=1
+  maxprocs=10
+fi
+
+logger -t $mytag "Set minprocs to $minprocs"
+
+tempfilemiss=0
+
+logger -t $mytag sleeping 2 minutes to give salt connection time to normalize.
+sleep 120
+
+[ -f "$repairscript_log" ] && chmod 640 $repairscript_log
+now=$SECONDS
+logger -t $mytag watcher loop started.
+
+export PATH=/usr/bin:$PATH
+
+$DEBUG || {
+while true
+do
+  runrepair=0
+  restart=0
+  elapsed=$(($SECONDS - $now))
+  #logger -t $mytag DEBUG $elapsed
+
+  if [ $elapsed -gt $checkinterval ] 
+  then
+    logger -t $mytag running checks.
+    now=$SECONDS
+
+    if [ -d "/opt/saltstack/salt/bin" ]
+    then
+      procstr='/opt/saltstack/.*salt-minion'
+    else
+      procstr='salt-minion'
+    fi
+
+    ## check salt-minion proc counts and look for defuncts
+    TESTALL=$(ps -ef | grep "$procstr" | grep -v grep | wc -l)
+    TESTNODEFUNCT=$(ps -ef | grep "$procstr" | grep -v defunct | grep -v grep | wc -l)
+    TESTDEFUNCT=$(ps -ef | grep "$procstr" | grep defunct | grep -v grep)
+    [ -z "$TESTDEFUNCT" ] && defunct_count=0
+
+    if [ -n "$TESTDEFUNCT" ] 
+    then
+      CURIFS=$IFS
+      IFS=$'\n'
+
+      for line in $TESTDEFUNCT
+      do
+        logger -t $mytag "defunct proc: $line"
+      done
+
+      IFS=$CURIFS
+
+      if [ $defunct_count -gt 1 ]
+      then
+        restart_reason="long running defunct procs detected"
+        logger -t $mytag "salt-minion $restart_reason - restarting."
+        restart=1
+        defunct_count=0
+      else
+        logger -t $mytag "warn - defunct proc detected."
+        ((defunct_count++))
+      fi
+    
+    elif [ $TESTNODEFUNCT -lt $minprocs ]
+    then
+      restart_reason="too few running procs $TESTNODEFUNCT of $minprocs"
+      logger -t $mytag "salt-minion $restart_reason - restarting."
+      restart=1
+
+    elif [ $TESTALL -gt $maxprocs ]
+    then
+      restart_reason="too many running procs $TESTALL gt $maxprocs"
+      logger -t $mytag "salt-minion $restart_reason - restarting."
+      restart=1
+    else
+      noop=1
+    fi
+
+    if [ $restart -eq 1 ]
+    then
+      if [ -z "$restartcmd" ]
+      then
+        logger -t $mytag "WARN - unsupported linux $(uname -a), service management unavailable."
+      else
+        pkill -9 salt-minion
+        $restartcmd
+        if [ $? -eq 0 ]
+        then
+          logger -t $mytag salt-minion service successfully restarted.
+          result=$(timeout 30 salt-call test.echo "smp-monitord: salt-minion required restart - $restart_reason" 2>&1)
+        else
+          logger -t $mytag ERROR salt-minion service failed to restart.
+          runrepair=1
+        fi
+      fi
+    fi
+
+    ## check if salt-minion still works. Did someone
+    ## change our python3 link?
+    TEST=$(salt-minion --version 2>&1)
+    if [ $? -ne 0 ]
+    then
+      runrepair=1
+      logger -t $mytag "cmd salt-minion --version failed"
+    fi
+
+    ## check for minion_healtcheck files
+    ## we allow for $maxhealthcheckmiss misses before marking
+    ## for repair
+    foundtmpfile=0
+    for file in $(find /tmp -maxdepth 1 -type f -name 'minion_healthcheck_*')
+    do
+      foundtmpfile=1
+      tempfilemiss=0
+      rm $file
+      #logger -t $mytag "minion_healthcheck file detected - $file
+    done
+
+    if [ $foundtmpfile -eq 1 ]
+    then
+      tempfilemiss=0
+      maxhealthcheckmiss=$default_maxhealthcheckmiss
+    else
+      ((tempfilemiss++))
+      #logger -t $mytag "minion_healthcheck file is missing - try $tempfilemiss of $maxhealthcheckmiss"
+    fi
+
+    if [ $tempfilemiss -gt $maxhealthcheckmiss ]
+    then
+      logger -t $mytag "minion_healthcheck file still missing after $maxhealthcheckmiss passes."
+      runrepair=1
+      tempfilemiss=0
+      maxhealthcheckmiss=$(($maxhealthcheckmiss * 2))
+      logger -t $mytag "maxhealthcheckmiss is now $maxhealthcheckmiss passes."
+    fi
+
+    if [ $runrepair -eq 1 ]
+    then
+      logger -t $mytag running repair script on non functional minion.
+      $repairscript > $repairscript_log 2>&1
+      if [ $? -eq 0 ]
+      then
+        logger -t $mytag repair successful.
+      else
+        logger -t $mytag repair failed - details in ${repairscript_log}.
+      fi
+    else
+      logger -t $mytag salt-minion process healthy - $checkinterval sec till next check.
+    fi
+
+  else
+    ## do we need to update?
+    if [ -f "$update_script" ]
+    then
+      update_lockfile='/tmp/salt_update_running'
+      logger -t $mytag update request detected - updating.
+      if [ -f "$update_lockfile" ]
+      then
+        lastmod=$(stat --printf '%Y' $update_lockfile)
+        [ -z "$lastmod" ] && lastmod=0
+        currenttime=$(date +'%s')
+        thediff=$(($currenttime - $lastmod))
+
+        if [ $thediff -gt 900 ]
+        then
+          rm "$update_lockfile"
+          pkill -9 "$update_script"
+        fi
+
+        logger -t $mytag "WARN - lockfile exists ($thediff) - aborting update."
+
+      else
+        touch "$update_lockfile"
+        sleep 10
+        TEST=$(timeout 600 $update_script 2>&1)
+        if [ $? -eq 0 ]
+        then
+          logger -t $mytag update successful.
+          result=$(timeout 30 salt-call test.echo 'smp-monitord: salt-minion updated' 2>&1)
+        else
+          logger -t $mytag update failed.
+        fi
+        rm "$update_lockfile"
+        rm "$update_script"
+      fi
+    fi
+  fi
+
+  sleep 10
+done ## end main loop
+}
+
+$DEBUG && [[ "$tty" != "not a tty" ]] && sleep 3 && echo "DAEMON OUT" >$tty
+
+exit # This may never run. Why is it here then? It's pretty.
+     # Kind of like, "The End" at the end of a movie that you
+     # already know is over. It's always nice.

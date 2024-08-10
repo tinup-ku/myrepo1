@@ -1,0 +1,18 @@
+#!/bin/ksh
+date_=$(date '+%a%H%M_%m%d%Y')
+
+{
+  echo "Re-enable splunk@boot"
+  # Cover both systemd and system V init.
+  cd /etc/init.d && [[ -x Splunk ]] && mv -f Splunk splunk
+  cd /etc/systemd/system && [[ -f Splunkd.service ]] && systemctl enable Splunkd
+
+  status=`show_splunk|awk '/^SPLUNK/{print $NF}'`
+  [[ $status != "UP" ]] && {
+    echo "Starting splunk"
+    start_splunk
+  }
+} |tee /var/tmp/`basename $0`.${date_}.OUT.$$
+
+mailx -s "$0 output|`uname -n`:/var/tmp/`basename $0`.${date_}.OUT.$$" user1@example.com,user2@example.com,user3@example.com,user4@example.com < /var/tmp/`basename $0`.${date_}.OUT.$$
+
