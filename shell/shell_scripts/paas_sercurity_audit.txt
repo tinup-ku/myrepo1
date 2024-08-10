@@ -1,0 +1,328 @@
+
+[root@h0000173 ~]# cat PaaS.SecurityAudit.R7
+#!/bin/bash
+
+# Security Audit - Item 7396, 7405, 7406, 7407, 7450, 7458, 5960, 7430
+# Ensure that /tmp and /dev/shm are secured
+if [ ! -f /etc/fstab ]; then
+        echo "Unable to locate the /etc/fstab file. Exiting..."
+        exit 1
+else
+        # Correct for /tmp
+        grep "/tmp" /etc/fstab | grep "defaults,nosuid" 2>&1 >/dev/null
+        if [ $? -ne 0 ]; then
+                BADLINE="`grep -n "/tmp" /etc/fstab | cut -d":" -f1`"
+                if [ ! -z ${BADLINE} ]; then
+                        sed -i.bak -e "${BADLINE}s/\ .defaults.\ /defaults,nosuid/" /etc/fstab
+                fi
+        fi
+
+        # Correct for /dev/shm
+        grep "/dev/shm" /etc/fstab | grep "defaults,nosuid,nodev,noexec" 2>&1 >/dev/null
+        if [ $? -ne 0 ]; then
+                BADLINE="`grep -n "/dev/shm" /etc/fstab | cut -d":" -f1`"
+                if [ ! -z ${BADLINE} ]; then
+                        sed -i.bak -e "${BADLINE}s/\ .defaults.\ /defaults,nosuid,nodev,noexec/" /etc/fstab
+                else
+                        echo -e "shmfs\t/dev/shm\t\ttmpfs\tdefaults,nosuid,nodev,noexec\t0 0" >> /etc/fstab
+                fi
+        fi
+
+        # Correct for /var/tmp
+        grep "/var/tmp" /etc/fstab | grep "bind" 2>&1 >/dev/null
+        if [ $? -ne 0 ]; then
+                BADLINE="`grep -n "/var/tmp" /etc/fstab | cut -d":" -f1`"
+                if [ ! -z ${BADLINE} ]; then
+                        sed -i.bak -e "${BADLINE}s/\ .bind.\ /bind/" /etc/fstab
+                else
+                        echo -e "/tmp\t/var/tmp\t\tnone\tbind\t0 0" >> /etc/fstab
+                fi
+        fi
+fi
+
+# Security Audit - Item 2265
+# Ensure /etc/motd permissions are set correctly
+MOTD_MODE="`stat -c %a /etc/motd`"
+if [ ${MOTD_MODE} -ne 644 ]; then
+        chmod 644 /etc/motd
+fi
+
+# Security Audit - Item 7450
+grep "restrict default kod nomodify notrap nopeer noquery" /etc/ntp.conf 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -n "restrict default" /etc/ntp.conf | cut -d":" -f1 | head -1`"
+        if [ ! -z ${BADLINE} ]; then
+                sed -i.bak -e "${BADLINE}s/^restrict\ default\ .*/restrict\ default\ kod\ nomodify\ notrap\ nopeer\ noquery/" /etc/ntp.conf
+        else
+                echo -e "restrict default kod nomodify notrap nopeer noquery" >> /etc/ntp.conf
+        fi
+fi
+
+# Security Audit - Item 7450
+grep "restrict 127.0.0.1" /etc/ntp.conf 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -n "restrict 127.0.0.1" /etc/ntp.conf | cut -d":" -f1 | head -1`"
+        if [ ! -z ${BADLINE} ]; then
+                sed -i.bak -e "${BADLINE}s/^restrict\ 127.0.0.1\ .*/restrict\ 127.0.0.1/" /etc/ntp.conf
+        else
+                echo -e "restrict 127.0.0.1" >> /etc/ntp.conf
+        fi
+fi
+
+# Correct for /dev/shm
+grep "/dev/shm" /etc/fstab | grep "defaults,nosuid,nodev,noexec" 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -n "/dev/shm" /etc/fstab | cut -d":" -f1`"
+        if [ ! -z ${BADLINE} ]; then
+                sed -i.bak -e "${BADLINE}s/\ .defaults.\ /defaults,nosuid,nodev,noexec/" /etc/fstab
+        else
+                echo -e "shmfs\t/dev/shm\t\ttmpfs\tdefaults,nosuid,nodev,noexec\t0 0" >> /etc/fstab
+        fi
+fi
+
+# Security Audit - Item 7458
+if [ `grep "inet_interfaces = localhost" /etc/postfix/main.cf | wc -l` -ne 1 ]; then
+        sed -i.bak -e "s/inet_interfaces\ =\ .*/inet_interfaces\ =\ localhost/g" /etc/postfix/main.cf
+fi
+
+# sysctl settings: 5960, 5966, 7464, diable ipv6 options
+SYSCTLset=(
+        net.ipv4.conf.default.accept_redirects:0
+        net.ipv4.conf.all.log_martians:0
+        net.ipv4.conf.default.log_martians:0
+        net.ipv6.conf.all.accept_ra:1
+        net.ipv6.conf.default.accept_ra:1
+        net.ipv6.conf.all.accept_redirects:0
+        net.ipv6.conf.default.accept_redirects:0
+        net.ipv6.conf.all.disable_ipv6:1
+)
+for SYSset in ${SYSCTLset[@]}
+do
+        myset="`echo ${SYSset} | cut -d':' -f1`"
+        myval="`echo ${SYSset} | cut -d':' -f2`"
+        egrep "^${myset} = ${myval}" /etc/sysctl.conf 2>&1 >/dev/null
+        if [ $? -ne 0 ]; then
+                BADLINE="`egrep -in "${myset} = " /etc/sysctl.conf | cut -d":" -f1`"
+                if [ -z ${BADLINE} ]; then
+                        echo "# ${myset}: TDA Default" >> /etc/sysctl.conf
+                        echo -e "${myset} = ${myval}" >> /etc/sysctl.conf
+                else
+                        sed -i.bak -e "${BADLINE}s/^.*${myset}\ =.*/${myset}\ =\ ${myval}/I" /etc/sysctl.conf
+                fi
+        fi
+done
+
+
+# Security Audit - Item 3916
+egrep "^*.*hard.*core" /etc/security/limits.conf 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "hard.*core" /etc/security/limits.conf | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                sed -i.bak -e '/#\ End\ of\ file/d' /etc/security/limits.conf
+                echo -e "*\t\thard\tcore\t\t0" >> /etc/security/limits.conf
+                echo -e "\n# End of file" >> /etc/security/limits.conf
+        else
+                sed -i.bak -e "${BADLINE}s/^.*hard.*core.*/\*\t\thard\tcore\t\t0/I" /etc/security/limits.conf
+        fi
+fi
+
+# Security Audit - Item 7430
+if [ `grep "wheel:x:10:root" /etc/group | wc -l` -ne 1 ]; then
+        sed -i.bak -e "s/wheel:x:10:.*/wheel:x:10:root/g" /etc/group
+fi
+
+# Security Audit - SSH settings
+# Ensure strong ciphers are used for ssh
+grep -i "^Ciphers aes128-ctr,aes192-ctr,aes256-ctr" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "Ciphers" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure strong ciphers are used" >> /etc/ssh/sshd_config
+                echo "Ciphers aes128-ctr,aes192-ctr,aes256-ctr" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*Ciphers\ .*/Ciphers\ aes128-ctr,aes192-ctr,aes256-ctr/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure log level is set to info
+grep -i "^LogLevel INFO" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "LogLevel" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure correct log level is set" >> /etc/ssh/sshd_config
+                echo "LogLevel INFO" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*LogLevel\ .*/LogLevel\ INFO/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure maxauthtries is set to 3
+grep -i "^MaxAuthTries" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "MaxAuthTries" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure MaxAuthTries is set to 3" >> /etc/ssh/sshd_config
+                echo "MaxAuthTries 3" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*MaxAuthTries\ .*/MaxAuthTries\ 3/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure PermitUserEnvironment is set to no
+grep -i "^PermitUserEnvironment no" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "PermitUserEnvironment" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure PermitUserEnvironment is set to no" >> /etc/ssh/sshd_config
+                echo "PermitUserEnvironment no" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*PermitUserEnvironment\ .*/PermitUserEnvironment\ no/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure X11 environment is configured - we want X traffic to go through the SSH tunnel
+grep -i "^X11Forwarding yes" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "X11Forwarding" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure X11 forwarding is enabled" >> /etc/ssh/sshd_config
+                echo "X11Forwarding yes" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*X11Forwarding\ .*/X11Forwarding\ yes/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure X11 display is set for the tunnel
+grep -i "^X11UseLocalhost no" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "X11UseLocalhost" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure X11 localhost is set to no" >> /etc/ssh/sshd_config
+                echo "X11UseLocalhost no" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*X11UseLocalhost\ .*/X11UseLocalhost\ no/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure ClientAliveInterval is set to 300
+grep -i "^ClientAliveInterval 300" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "ClientAliveInterval" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure ClientAliveInterval is set to 300" >> /etc/ssh/sshd_config
+                echo "ClientAliveInterval 300" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*ClientAliveInterval\ .*/ClientAliveInterval\ 300/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Ensure ClientAliveCountMax is set to 3
+grep -i "^ClientAliveCountMax 3" /etc/ssh/sshd_config 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+        BADLINE="`grep -in "ClientAliveCountMax" /etc/ssh/sshd_config | cut -d":" -f1`"
+        if [ -z ${BADLINE} ]; then
+                echo "" >> /etc/ssh/sshd_config
+                echo "# Ensure ClientAliveCountMax is set to 3" >> /etc/ssh/sshd_config
+                echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
+                echo "" >> /etc/ssh/sshd_config
+        else
+                sed -i.bak -e "${BADLINE}s/^.*ClientAliveCountMax\ .*/ClientAliveCountMax\ 3/I" /etc/ssh/sshd_config
+        fi
+fi
+
+# Security Audit - Item 1418, 7356
+if [ -f /etc/at.deny ]; then
+        rm -f /etc/at.deny
+fi
+
+# Security Audit - Item 9494, 9498, 9496, 9497, 9495
+# PAM password complexity settings
+PAMQfile="/etc/security/pwquality.conf"
+PAMQsetting=( minlen:9 dcredit:-1 ucredit:-1 ocredit:-1 lcredit:-1 )
+for Psetting in ${PAMQsetting[@]}
+do
+        myset="`echo ${Psetting} | cut -d':' -f1`"
+        myval="`echo ${Psetting} | cut -d':' -f2`"
+        egrep "^${myset} = ${myval}" ${PAMQfile} 2>&1 >/dev/null
+        if [ $? -ne 0 ]; then
+                BADLINE="`egrep -in "${myset} = " ${PAMQfile} | cut -d":" -f1`"
+                if [ -z ${BADLINE} ]; then
+                        echo "" >> ${PAMQfile}
+                        echo -e "${myset} = ${myval}" >> ${PAMQfile}
+                else
+                        sed -i.bak -e "${BADLINE}s/^.*${myset}\ =.*/${myset}\ =\ ${myval}/I" ${PAMQfile}
+                fi
+        fi
+done
+
+# Security Audit - Item 9156
+# Override default OS umask, set to 077
+echo "umask 077" > /etc/profile.d/umask.sh
+
+# Set file permissions
+# Path/Filename:owner:group:perms
+FILEATTRIBS=(
+        /etc/anacrontab:root:root:600
+        /etc/cron.hourly:root:root:600
+        /etc/cron.daily:root:root:600
+        /etc/cron.weekly:root:root:600
+        /etc/cron.monthly:root:root:600
+        /etc/cron.d:root:root:600
+        /etc/crontab:root:root:600
+        /etc/ssh/sshd_config:root:root:600
+        /etc/rsyslog.conf:root:root:600
+)
+for f_set in ${FILEATTRIBS[@]}
+do
+        FPATH="`echo ${f_set} | cut -d':' -f1`"
+        FUSR="`echo ${f_set} | cut -d':' -f2`"
+        FGRP="`echo ${f_set} | cut -d':' -f3`"
+        FPERM="`echo ${f_set} | cut -d':' -f4`"
+
+        chown -R ${FUSR}:${FGRP} ${FPATH}
+        chmod -R ${FPERM} ${FPATH}
+done
+
+# Check for zsecscan access - zsecscan_sudo
+if [ ! -f /etc/sudoers.d/zsecscan_sudo ]; then
+        touch /etc/sudoers.d/zsecscan_sudo
+        echo "# Qualys Scanning is allowed root access" >> /etc/sudoers.d/zsecscan_sudo
+        echo -e "zsecscan\t\tALL=/bin/su -" >> /etc/sudoers.d/zsecscan_sudo
+        chmod 440 /etc/sudoers.d/zsecscan_sudo
+        chown root:root /etc/sudoers.d/zsecscan_sudo
+fi
+
+# Security Audit - Item 1616
+if [ -f /etc/default/useradd ]; then
+        sed -i.bak -e 's/INACTIVE.*/INACTIVE=35/g' /etc/default/useradd
+fi
+
+## The fedora user is not necessary on the server
+#/usr/sbin/userdel -r fedora
+#/usr/sbin/groupdel fedora
+
+# Ensure BESagent starts
+if [ -f /etc/init.d/besclient ]; then
+        /etc/init.d/besclient start
+fi
+
+# Ensure sshd is restarted
+/usr/bin/systemctl restart sshd.service
+
+# Ensure postfix is restarted so it doesn't error about ipv6
+/usr/bin/systemctl restart postfix.service
+[root@h0000173 ~]#

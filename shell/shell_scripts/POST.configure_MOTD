@@ -1,0 +1,24 @@
+#!/bin/bash -x  
+
+#==============================================================================
+#Change Log:
+#
+# When          Who		What
+# ----          ---		----
+# 09.04.2013	J. Wu		Created to configure MOTD	
+#
+#
+#==============================================================================
+
+. /etc/tda/env
+
+mv /etc/motd /etc/motd.tmp
+
+wget http://${BUILDSERVER}/install/rhel6.2.x86_64/config_files/1.0/motd -O /etc/motd
+
+echo -e "TDA Build Version: `cat /etc/tda-release`\nSystem Build Time: `date +%m/%d/%Y\ %H:%M`\n" >> /etc/motd
+
+chmod 755 /etc/motd
+rm -rf /etc/motd.tmp
+
+exit 0

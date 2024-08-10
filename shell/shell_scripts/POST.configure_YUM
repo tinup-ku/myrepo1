@@ -1,0 +1,60 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 04.04.2012    J. Ritter       Created inital script
+# 09.04.2013	J. Wu		Updated with new buildserver value
+# 09-09-2013	J. Wu		Updated with multilib fix
+#
+#==============================================================================
+
+. /etc/tda/env
+
+echo "Configure YUM" >> ${INSTLOG}
+
+# In RHEL 6 we disable protected multilib
+cp /etc/yum.conf /etc/yum.conf.$INPLACE
+
+if ! grep -q "protected_multilib=0" /etc/yum.conf; then
+    echo "# TDA Setting to allow 32 & 64bit packages to co-exist" >> /etc/yum.conf
+    echo "protected_multilib=0" >> /etc/yum.conf
+fi
+
+# Configure yum repos and continue to install software
+for REPONAME in `ls /etc/yum.repos.d`; do mv /etc/yum.repos.d/${REPONAME} /etc/yum.repos.d/${REPONAME}.DISABLED; done
+
+cat > /etc/yum.repos.d/tda64-rhel6.2-base.repo << _EOF
+[tda64-rhel6.2-dist]
+name=Red Hat Enterprise Linux \$releasever - \$basearch - Distro
+baseurl=http://${BUILDSERVER}/yumrepos/tda64-rhel6.2-base/current
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+_EOF
+
+cat > /etc/yum.repos.d/tda64-rhel6.2-ulse.repo << _EOT
+[tda64-rhel6.2-ulse]
+name=TDA Software for Red Hat Enterprise Linux \$releasever - \$basearch
+baseurl=http://${BUILDSERVER}/yumrepos/tda64-rhel6.2-ulse/1.0/current
+enabled=1
+gpgcheck=0
+_EOT
+
+cat > /etc/yum.repos.d/tda64-rhel6.2-1.0-updates.repo << _EOU
+[tda64-rhel6.2-1.0-updates]
+name=Updates for Red Hat Enterprise Linux \$releasever - \$basearch
+baseurl=http://${BUILDSERVER}/yumrepos/tda64-rhel6.2-updates/1.0/current
+enabled=1
+gpgcheck=0
+_EOU
+
+yum makecache all 2>&1 >> ${INSTLOG}
+if [ $? -ne 0 ]; then
+    echo "FAILED: Make yum cache failed" >> ${INSTLOG}
+    exit 1
+fi
+
+exit 0

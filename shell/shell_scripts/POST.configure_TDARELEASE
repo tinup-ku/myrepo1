@@ -1,0 +1,19 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who	        What
+# ----          ---	        ----
+# 06.13.2012    Mahesh Gurugunti       Create TD Release file
+#
+#
+#==============================================================================
+
+. /etc/tda/env
+ARCH=`arch`
+OSMajor=`cat /etc/redhat-release |sed 's/[^0-9.]//g'`
+TDMajor=1.0
+echo "rhel$OSMajor.$ARCH-$TDMajor" > /etc/tda-release
+
+exit 0

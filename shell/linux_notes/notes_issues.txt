@@ -1,0 +1,11 @@
+
+Issue with 
+
+Below command run remotely using ssh and it updates the rpm but hangs at the end without returning the prompt, ssh session will hang until killed.
+       ( here STDERR redirected to STDOUT )
+   ssh server1 "rpm -Uvh /var/tmp/xyz_temp/pkg-xyz-10.5.00-1.x86_64.rpm 2>&1"
+
+But this works: ssh remotely run commamnd updates the rpm and returns the prompt ( here STDOUT redirected to STDERR )
+  ssh server1 "rpm -Uvh /var/tmp/xyz_temp/pkg-xyz-10.5.00-1.x86_64.rpm 1>&2"
+
+Answer: It seems some issue with STDERR and it is causing the hang, once stdout is redircted to it it is fine

@@ -1,0 +1,77 @@
+#!/bin/bash -x
+
+#==============================================================================
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 04.04.2012    J. Ritter       Created inital script
+# 
+#
+#==============================================================================
+
+. /etc/tda/env
+
+echo "Configure user/groups" >> ${INSTLOG}
+
+# Configure local users/groups
+cat /etc/shells | grep false 2>&1 >/dev/null
+if [ $? -ne 0 ]; then
+  echo -e "\nAdding /bin/false as valid user shell..." >> ${INSTLOG}
+  echo "/bin/false" >> /etc/shells
+
+  echo "exit" >> /bin/false
+  chmod 755 /bin/false; chown bin:bin /bin/false
+fi
+
+RMUSERS="games"
+RMGRPS="games"
+
+# Remove the users listed above
+for i in $RMUSERS; do
+  getent passwd $i > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    /usr/sbin/userdel $i 2>&1 >> ${INSTLOG}
+  fi
+done
+/usr/sbin/pwconv > /dev/null 2>&1
+
+# Remove the groups listed above
+for i in $RMGRPS; do
+  getent group $i > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    /usr/sbin/groupdel $i 2>&1 >> ${INSTLOG}
+  fi
+done
+
+# Change the shell of the following users
+cat /etc/passwd | cut -d: -f1,3,7 | sed 's/:/ /g' | while read user id shell; do
+# Skip root and non system user id's
+if [ $id -eq 0 -o $id -gt 500 ]; then
+  continue
+fi
+
+# Skip user's whose shell is already set
+if [ "x$shell" == "x/bin/false" ]; then
+  continue
+fi
+
+# Set the shell appropriately
+/usr/bin/chsh -s /bin/false $user 2>&1 >> ${INSTLOG}
+done
+
+# Nobody needs to have passwd set as well
+/usr/bin/chsh -s /bin/false nobody 2>&1 >> ${INSTLOG}
+
+# Make sure the passwd for all users is set
+sed --in-place=$INPLACE 's/^\([^:]*\)::\(.*\)/\1:*:\2/' /etc/shadow 2>&1 >> ${INSTLOG}
+
+# Our standard is to have certain groups at specific GID's...
+# NTP needs 105 and users needs 103. The other users need to move out of the
+# way so we set them up to lower ID's
+groupmod -o -g 57 uuidd
+groupmod -o -g 58 polkituser
+groupmod -o -g 105 ntp
+groupmod -o -g 103 users
+
+exit 0

@@ -1,0 +1,65 @@
+
+Ad join commmand on one of the ed clientsys server:
+ adjoin --force -u 'admin-user-id' -p 'pass-wd' -c ou=Computers,ou=Unix -z prod <domain-name>
+
+
+  ===================
+
+
+check ad user:
+adquery user tomcat
+  dump all attributes:
+   adquery user tomcat -j
+
+check ad group:
+adquery group
+
+# adinfo
+
+
+# adquery user tomcat
+tomcat is not a zone user
+
+# grep tomcat /etc/passwd
+tomcat:x:0000005:000002:Service Account Tomcat:/app/tomcat:/bin/bash
+
+
+   =======
+for login issue for dev upgrade servers:
+
+    adleave -f
+    adjoin --force -u xxx -p 'xxx' -c ou=Computers,ou=Unix -z npe domain-name
+
+   =======
+
+AD Zone checking
+
+#!/bin/bash
+BINCMD=/usr/bin/adinfo
+GREPCMD=/usr/bin/grep
+LSCMD=/usr/bin/ls
+HOSTNAME=`hostname`
+DNSDL="domain1.com|domain2.local|domain3.ameritrade.com"
+$BINCMD --zone 2>&1 > /dev/null
+RC=$?
+DNSAD=`${BINCMD} -d | grep -E -q ${DNSDL}` &&  `${BINCMD} -z | grep -q '/Unix$'`
+DNSADRC=$?
+SUDAD=`${BINCMD} -z | grep -q '/Unix$'`  &&  `${LSCMD} -l /usr/bin/sudo | egrep -q '/dzdo$'`
+SUDADRC=$?
+if [[ $DNSAD  &&  $SUDAD ]]
+then
+    echo "INFO : ${BINCMD} RC=${RC}: Host ${HOSTNAME}ADINFO ZONE Check is OK"
+    echo "DNSAD = $DNSADRC"
+    echo "SUDAD = $SUDADRC"
+else
+    MSG="ERROR : ${BINCMD} (RC=${RC}: Host ${HOSTNAME} "
+    logger $MSG
+    echo "$MSG RC=$RC"
+    echo "DNSAD = $DNSADRC"
+    echo "SUDAD = $SUDADRC"
+fi
+echo $RC
+
+A RC (Return Code) 10 from adinfo --zone is the RC for a failed zone hierarchy
+
+  =================

@@ -1,0 +1,137 @@
+
+#!/bin/bash
+# script to validate apache platform
+# Tested on versions: Apache/2.4.23 (Red Hat) Serverbuilt:Aug  3 2017 15:57:15
+
+#log file for audit
+export LOG=/tmp/apache_validate.log
+
+echo `date` >> $LOG
+echo "******START******" >> $LOG
+
+# variable for return status
+return_code=0
+
+#check for sudo user
+grep zapache /etc/passwd > /dev/null 2>&1
+if [ $? = 1  ]; then
+ echo "zapache user missing" >> $LOG
+ return_code=1
+else
+# check for zapache user password expiration
+ pwdexpcheck=`chage -l zapache | grep -i 'password expires' | grep never | wc -l`
+ if [ ! $pwdexpcheck -gt 0 ]; then
+  return_code=1
+  echo "zapache user password is NOT set to expire never">> $LOG
+ fi
+fi
+
+#check for apache
+/usr/bin/grep apache /etc/passwd > /dev/null 2>&1
+if [ $? = 1  ]; then
+ echo "apache user missing" >> $LOG
+ return_code=1
+fi
+
+
+# check for OS version
+osver7=`more /etc/redhat-release | grep "release 7\." | wc -l`
+osver6=`more /etc/redhat-release | grep "release 6\." | wc -l`
+if [ $osver7 == 0 -a $osver6 == 0 ]; then
+return_code=1
+echo "OS version mismatch "  `more /etc/redhat-release` >> $LOG
+fi
+
+
+# Check for disk space allocation
+if [ -d /app ]; then
+ ds=`df -k /app | grep "/app" | tr '\n' ' ' | awk '{print $2}'`
+ if [ "$ds" -eq "$ds" ] 2>/dev/null; then
+  if [[($ds -lt 30000000) && (! -z $ds)]]; then
+   return_code=1
+   echo "Incorrect diskspace allocated /app : $ds" >> $LOG
+  fi
+ else
+  echo "/app disk space could NOT be determined" >> $LOG
+  return_code=1
+ fi
+else
+ echo "Missing required Directories /app" >> $LOG
+ return_code=1
+fi
+
+# Check for directories, files and permissions
+if [ -d /app/jbcs-httpd24-2.4 ] ; then
+ echo "Validating tda_rh_http profile" >> $LOG
+  dir="/app/jbcs-httpd24-2.4 /app/zapache /app/logdata/logs/http /app/logdata/logs/misc /app/logdata/archive/misc /app/logdata/archive/http /opt/rh/jbcs-httpd24 /app/doc_roots"
+  apache_files="/app/jbcs-httpd24-2.4/httpd/sbin/apachectl /app/jbcs-httpd24-2.4/httpd/bin/apachectl /app/zapache/.profile" 
+
+all_files="/app/jbcs-httpd24-2.4 /app/zapache /app/logdata/logs/http /app/logdata/logs/misc /app/logdata/archive/misc /app/logdata/archive/http /opt/rh/jbcs-httpd24 /app/doc_roots /app/jbcs-httpd24-2.4/httpd/sbin/apachectl /app/jbcs-httpd24-2.4/httpd/bin/apachectl /app/zapache/.profile"
+
+elif [ -d /app/apache/bin ]; then
+echo "Validating tda_http* profile" >> $LOG
+
+dir="/app/zapache /app/logdata/logs/http /app/logdata/archive/http /app/apache/bin /app/doc_roots /app/apache/conf"
+
+apache_files="/opt/rh/httpd24/root/etc/httpd/conf/httpd.conf"
+
+all_files="/app/zapache /app/logdata/logs/http /app/logdata/archive/http /app/apache/bin /app/doc_roots /app/apache/conf /opt/rh/httpd24/root/etc/httpd/conf/httpd.conf"
+else 
+echo "Unsupported apache version" >> $LOG
+fi
+
+for i in $dir
+do
+if [ ! -d $i ]; then
+return_code=1
+echo "Required directory missing" $i>> $LOG
+fi
+done
+
+for i in $apache_files
+do
+if [ ! -f "$i" ]; then
+return_code=1
+echo "Required file missing" $i>> $LOG
+fi
+done
+
+
+#check for the ownership of directories/files
+for i in $all_files
+do
+if [ -d $i -o -f $i ]; then
+ ownr=`ls -ld $i | awk '{print $3}i'`
+ grp=`ls -ld $i | awk '{print $4}'`
+ if ! [ $ownr == zapache -a $grp == users ]; then
+ return_code=1
+ echo "Required directory owner/group info incorrect" $i $ownr $grp >> $LOG
+ fi
+fi
+done
+
+# check for crontab
+/usr/bin/crontab -l > /dev/null 2>&1
+if [ $? -gt 0 ]; then
+return_code=1
+echo "Crontab not accessible">> $LOG
+fi
+
+# check for umask
+if [ -f /app/zapache/.profile ] ; then
+ ucheck=`cat /app/zapache/.profile | grep "umask 022" | wc -l`
+ if [ ! $ucheck -gt 0 ]; then
+  return_code=1
+  echo "Umask setting missing">> $LOG
+ fi
+fi
+
+echo "*****END****" >> $LOG
+
+# log file maintenance
+loglen=`cat $LOG | wc -l`
+if [ "$loglen" -gt "400" ]; then
+ mv $LOG $LOG.BKP
+fi
+
+exit $return_code

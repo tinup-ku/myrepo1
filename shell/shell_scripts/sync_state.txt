@@ -1,0 +1,41 @@
+#!/bin/bash
+
+
+  thisnode="`uname -n`"
+  masterfile='/etc/syncmaster'
+
+
+  if [[ ! -f $masterfile ]] ;
+  then echo "...`uname -n` IS NOT A SYNC MASTER."
+       exit 1
+  fi
+
+
+  service lsyncd status >/dev/null 2>&1
+  if [[ $? != '0' ]]
+  then is_bad="true"
+       message="ERROR: LSYNCD SERVICE APPEARS DOWN ON ${thisnode}"
+  fi
+
+
+  pgrep lsyncd >/dev/null 2>&1
+  if [[ $? != '0' ]]
+  then is_bad='true'
+       message="ERROR: LSYNCD PROCESSES NOT DETECTED ON ${thisnode}."
+  fi
+
+
+  for i in hiera.lua environments.lua ; do
+    ps -ef | egrep -v '(grep)' | grep lsyncd | grep $i >/dev/null 2>&1
+    if [[ $? != '0' ]]
+    then is_bad='true'
+         message="ERROR: LSYNCD PROCESS FOR $i NOT DETECTED ON ${thisnode}."
+    fi
+  done
+
+
+  if [[ $is_bad = 'true' ]]
+  then echo "${message}"
+  else echo "SYNC STATE LOOKS GOOD ON ${thisnode}"
+  fi
+

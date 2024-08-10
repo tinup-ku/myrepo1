@@ -1,0 +1,302 @@
+#!/bin/bash
+#   File: backup_cleanup.bsh
+#   Author: Letha Christian
+#   Date: 04-11-2006
+#   Usage:  backup_cleanup.bsh port
+#   Example: backup_cleanup.bsh 5432
+#
+#   Description: This script will remove old archive logs, old backup files and old rows in the
+#                back_job_history table.  The script will maintain 2 sets of backup files on the
+#                disk and all archive logs that are included in the backup file will be deleted.
+#                A log will be date stamped and kept for the entire process.
+#
+#set -x
+
+if [ $# -ne 2 ]
+then
+   echo "USAGE: backup_cleanup.bsh <instance_name> <database_name>"
+   exit 1
+fi
+
+#
+# Setup the batch environmental variables using the database cluster port
+#
+
+SCRIPT=~/util/script
+### LOG=~/util/log/backup
+source $SCRIPT/maint/batch_env.bsh $1
+echo `env|grep PG`
+LOG=$PGLOGDIR
+PGDATABASE=$2
+#
+# Setup the environmental variables for temporary files
+#
+
+RM_BKUP_FILE_SQL="/tmp/${PGDATABASE}_rm_bkup_files.sql"      #Store SQL query to create Linux stmts to remove old backup files
+RM_BKUP_FILE_BSH="/tmp/${PGDATABASE}_rm_bkup_files.bsh"      #Store LINUX stmts to remove old backup files
+DELETED_ROWS_LOG="/tmp/${PGDATABASE}_deleted_rows.log"       #Store LOG of rows deleted from backup_job_history
+RM_BKUP_FILE_LOG="$LOG/${PGDATABASE}_rm_bkup_files_`date +%Y%m%d`.log"      #Store LOG entire cleanup process
+echo `whoami`
+echo "RM_BKUP_FILE_LOG $RM_BKUP_FILE_LOG"
+#
+# Create a list of servers from the list
+# echo `grep -v "#" ~/config/pg_servers.cfg`|sed  "s/ /,/g"
+#
+### export PGHOSTLIST=`grep -v "#" ~/config/pg_servers.cfg`
+### export PGHOSTLIST=`echo $t|sed -e "s/ /','/g"`
+
+echo $PGHOSTLIST > $RM_BKUP_FILE_BSH
+
+#
+# Create query from the backup_job_history table to produce statements to remove
+# old backup files that are older than today minus 2 days.
+#
+
+echo "select 'rm /$PGMOUNT/pgbackup/$PGCLUST/' || file_nm from dba_admin.backup_job_history
+where  server_nm in ('$PGHOSTLIST') and db_cluster_nm='$PGCLUST' and backup_type_cd = 'DB'
+and status_cd = 'success' and start_dt < date(now()) - 1 order by database_nm,start_dt;
+select 'rm /$PGMOUNT/pgbackup/$PGCLUST/' || file_nm from dba_admin.backup_job_history
+where  server_nm in ('$PGHOSTLIST')  and db_cluster_nm='$PGCLUST' and (backup_type_cd = 'DATA' or backup_type_cd = 'WAL')
+and status_cd = 'success' and start_dt < date(now()) - 1 order by start_dt;" >$RM_BKUP_FILE_SQL
+
+#
+# Use psql to execute the query just created from the backup_job_history table in the admin db on $PGHOSTADMIN
+#
+
+$PGBIN/psql -U dba_user -d admin -h $PGHOSTADMIN -p $PGHOSTADMINPORT -t -f $RM_BKUP_FILE_SQL -o $RM_BKUP_FILE_BSH
+
+
+#
+# Create logfile of cleanup process
+#
+
+echo "****** DATABASE CLEANUP FOR " $PGHOST " - " $PGCLUST "DATE: " `date +%D` >$RM_BKUP_FILE_LOG
+echo "   " >>$RM_BKUP_FILE_LOG
+
+echo "****** DATABASE BACKUP FILES DELETED FROM BACKUP DIRECTORY
+                    " >>$RM_BKUP_FILE_LOG
+cat $RM_BKUP_FILE_BSH >>$RM_BKUP_FILE_LOG
+
+#
+# Make the file executable and run the script $RM_BKUP_FILE_BSH to remove the old backup files
+#
+
+chmod 755 $RM_BKUP_FILE_BSH
+$RM_BKUP_FILE_BSH
+
+#
+# Delete rows from the backup_job_history table of the old backup files that were just removed
+# from the file system.
+#
+
+echo "select database_nm, start_dt, file_nm, status_cd from dba_admin.backup_job_history
+where  server_nm in ('$PGHOSTLIST') and db_cluster_nm='$PGCLUST' and backup_type_cd = 'DB'
+and start_dt < date(now()) - 1 order by database_nm,start_dt;
+delete from dba_admin.backup_job_history
+where  server_nm in ('$PGHOSTLIST')  and db_cluster_nm='$PGCLUST' and backup_type_cd = 'DB'
+and start_dt < date(now()) - 1;
+select start_dt, file_nm, status_cd from dba_admin.backup_job_history
+where  server_nm in ('$PGHOSTLIST')  and db_cluster_nm='$PGCLUST' and (backup_type_cd = 'DATA' or backup_type_cd = 'WAL')
+and start_dt < date(now()) - 1 order by start_dt;
+delete from dba_admin.backup_job_history
+where  server_nm in ('$PGHOSTLIST')  and db_cluster_nm='$PGCLUST' and (backup_type_cd = 'DATA' or backup_type_cd = 'WAL')
+and start_dt < date(now()) - 1;" >$RM_BKUP_FILE_SQL
+
+# Use psql to execute the query just created from the backup_job_history table in the admin db on $PGHOSTADMIN
+
+$PGBIN/psql -U dba_user -d admin -h $PGHOSTADMIN -p $PGHOSTADMINPORT -t -f $RM_BKUP_FILE_SQL -o $DELETED_ROWS_LOG
+
+#
+# Append to logfile of cleanup process
+#
+
+echo "
+****** DATABASE ROWS DELETED FROM TABLE BACKUP_JOB_HISTORY
+                    " >>$RM_BKUP_FILE_LOG
+cat $DELETED_ROWS_LOG >>$RM_BKUP_FILE_LOG
+
+#
+# Remove temporary files from processes above
+#
+
+##111## rm $RM_BKUP_FILE_BSH $RM_BKUP_FILE_SQL $DELETED_ROWS_LOG
+
+#
+#  Check to see if WAL archiving is enabled - By checked postgresql.conf file
+#  to see if the archive statement is commented out.  If archiving is NOT enabled
+#  then you can cat the log file and exit the script because the remainder of
+#  script deals with the archivelog cleanup.
+#
+##########################################################################
+### Effective v.9.1 include_if_exists clause to be used     ##############
+### new file archive.cfg will maintain archive_mode value   ##############
+##########################################################################
+   WAL_ENABLED=`grep "archive_mode = on" $PGDATA/postgresql.conf | wc -l`
+   ### WAL_ENABLED=`grep "archive_mode = on" $PGDATA/postgresql.conf | wc -l`
+   ### WAL_ENABLED=`grep "#archive" $PGDATA/postgresql.conf | wc -l`
+CHK_ARCHIVE_MODE_SQL="select current_setting('archive_mode');"
+
+echo "CHK_ARCHIVE_MODE_SQL before" $CHK_ARCHIVE_MODE_SQL
+### CHK_ARCHIVE_MODE=`$PGBIN/psql -d rdmdb -U dba_user -h $PGHOST -p $PGPORT -t -q -c $CHK_ARCHIVE_MODE_SQL`
+CHK_ARCHIVE_MODE=`$PGBIN/psql -d $PGDATABASE -h $PGHOST -p $PGPORT -t -q -c "select current_setting('archive_mode');"`
+echo "CHK_ARCHIVE_MODE_SQL after" $CHK_ARCHIVE_MODE_SQL
+echo "CHK_ARCHIVE_MODE after" $CHK_ARCHIVE_MODE
+   if [[ $WAL_ENABLED -eq 1 ]]
+   then
+      echo "WAL_ENABLED $WAL_ENABLED"
+      cat $RM_BKUP_FILE_LOG
+      exit 0
+   fi
+
+#
+#  CLEANUP OF ARCHIVE LOGS -  ARCHIVING SHOULD BE ENABLED
+#
+#  Check for the archive logs to delete from the directory /$PGMOUNT/pgarchive/$PGCLUST
+#  If there is a successful PITR backup from 3 days ago then look in the file
+#  to find the START WAL LOCATION file and then delete all archive files before
+#  the file identified else don't delete anything.
+#
+
+cd /$PGMOUNT/pgarchive/$PGCLUST
+
+if [[ ! -f `find ./ -name '*.backup*' | tail -1 ` ]]
+then
+        echo "***********************************************" >>$RM_BKUP_FILE_LOG
+        echo "           NO ARCHIVE LOGS DELETED             " >>$RM_BKUP_FILE_LOG
+        echo "          NO BACKUP HISTORY FILES FOUND        " >>$RM_BKUP_FILE_LOG
+        echo "***********************************************" >>$RM_BKUP_FILE_LOG
+        exit 1
+fi
+
+
+#
+#       Find the starting archive log in the last *.backup file.  If the starting archive log is still in the
+#       pxlog directory then all archive files in /$PGMOUNT/pgarchive/$PGCLUST can be deleted.  If the
+#       starting archive log is in /$PGMOUNT/pgarchive then delete archive files older than the starting file.
+#
+BACKUP_HISTFILE_NM="`find ./ -name '*.backup*' | tail -1`"
+/usr/bin/gzip -d $BACKUP_HISTFILE_NM
+BACKUP_HISTFILE="`find ./ -name '*.backup*' | tail -1`"
+START_WAL_FILE="`cat $BACKUP_HISTFILE | grep 'START WAL' | cut -d' ' -f6 | cut -d')' -f1`"
+BKUP_DATA_FILE="`cat $BACKUP_HISTFILE | grep 'LABEL' | cut -d' ' -f2`.DATA.tar.gz"
+#
+#       Check for the backup data file in the backup directory. If not available, do not
+#       delete any WAL files
+#
+if [[ ! -f /pgbackup/$PGCLUST/$BKUP_DATA_FILE ]]
+then
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "       NO ARCHIVE LOGS DELETED                  " >>$RM_BKUP_FILE_LOG
+        echo "  BACKUP FILE: ' $BKUP_DATA_FILE ' NOT FOUND    " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        exit 1
+fi
+
+#
+#       If the starting archive log is still in the pgxlog directory then ALL archive files
+#       in /$PGMOUNT/pgarchive/$PGCLUST can be deleted.
+
+if [[ -f /$PGMOUNT/pgxlog/$PGCLUST/$START_WAL_FILE ]]
+then
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "*** BACKUP HISTORY FILE              " >>$RM_BKUP_FILE_LOG
+        cat $BACKUP_HISTFILE  >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        TOT_ARCHIVES="`ls -tr | grep -v backup | wc -l`"
+        echo "TOT_ARCHIVES="$TOT_ARCHIVES >>$RM_BKUP_FILE_LOG
+        echo "ARCHIVES AVAILABLE FOR DELETE =" $TOT_ARCHIVES >>$RM_BKUP_FILE_LOG
+#
+#       Get the list of archive files that can be deleted
+#
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "*** ARCHIVE LOGS DELETED                        " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        DEL_ARCHIVE_FILES="`ls -tr | grep -v backup`"
+
+        if [[ $TOT_ARCHIVES -gt 0 ]]
+        then
+            ls -ltr $DEL_ARCHIVE_FILES >>$RM_BKUP_FILE_LOG
+        else
+            echo " NONE " >>$RM_BKUP_FILE_LOG
+        fi
+#
+#       Get the list of *.backup files that can be deleted
+#
+        echo "                                                " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "*** ARCHIVE BACKUP HISTORY LOGS DELETED         " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        BKUP_CNT="`find ./ -name '*.backup*' | wc -l`"
+        let FILE_DEL="$BKUP_CNT - 1"
+        DEL_BACKUP_FILES="`find ./ -name '*.backup*' | head -$FILE_DEL`"
+        echo "TOT_ARCHIVE_BACKUP_HISTORY_LOGS="$FILE_DEL >>$RM_BKUP_FILE_LOG
+
+         if [[ $FILE_DEL -gt 0 ]]
+        then
+           ls -ltr $DEL_BACKUP_FILES >>$RM_BKUP_FILE_LOG
+        else
+            echo " NONE " >>$RM_BKUP_FILE_LOG
+        fi
+#
+#               Delete the archive files and backup_history files if counts are not > 0
+#
+        if [[ $DEL_ARCHIVE_FILES > ' ' || $DEL_BACKUP_FILE > ' ' ]]
+        then
+                 rm $DEL_ARCHIVE_FILES  $DEL_BACKUP_FILES
+        fi
+else
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "*** BACKUP HISTORY FILE              " >>$RM_BKUP_FILE_LOG
+        cat $BACKUP_HISTFILE  >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        TOT_ARCHIVES="`ls -tr | grep -v backup | wc -l`"
+
+        REM_ARCHIVES="`find  -name '[0123456789ABCDEF]*' -newer $START_WAL_FILE.gz -print | cut -d'/' -f2 | grep -v backup |wc -l`"
+        let FILE_DEL="$TOT_ARCHIVES - REM_ARCHIVES"
+        DEL_ARCHIVE_FILES="`ls -tr | grep -v backup | head -$FILE_DEL`"
+        echo "                  TOT_ARCHIVES=" $TOT_ARCHIVES >>$RM_BKUP_FILE_LOG
+        echo "ARCHIVES AVAILABLE FOR DELETE =" $FILE_DEL >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "*** ARCHIVE LOGS DELETED                        " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+
+        if [[ $FILE_DEL -gt 0 ]]
+        then
+            ls -ltr $DEL_ARCHIVE_FILES >>$RM_BKUP_FILE_LOG
+        else
+            echo " NONE " >>$RM_BKUP_FILE_LOG
+        fi
+#
+#       Get the list of *.backup files that can be deleted
+#
+        echo "                                                " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        echo "*** ARCHIVE BACKUP HISTORY LOGS DELETED         " >>$RM_BKUP_FILE_LOG
+        echo "*********************************************** " >>$RM_BKUP_FILE_LOG
+        BKUP_CNT="`find ./ -name '*.backup*' | wc -l`"
+        let FILE_DEL="$BKUP_CNT - 1"
+        DEL_BACKUP_FILES="`find ./ -name '*.backup*' | head -$FILE_DEL`"
+        echo "TOT_ARCHIVE_BACKUP_HISTORY_LOGS="$FILE_DEL >>$RM_BKUP_FILE_LOG
+
+        if [[ $FILE_DEL -gt 0 ]]
+        then
+           ls -ltr $DEL_BACKUP_FILES >>$RM_BKUP_FILE_LOG
+        else
+            echo " NONE " >>$RM_BKUP_FILE_LOG
+        fi
+#
+#       Delete the archive files and backup_history files if counts are not > 0
+#
+        if [[ $DEL_ARCHIVE_FILES > ' ' || $DEL_BACKUP_FILES > ' ' ]]
+        then
+                 rm $DEL_ARCHIVE_FILES  $DEL_BACKUP_FILES
+        fi
+fi
+
+#
+#       Recompress the backup_history file and cat the log of this process
+#
+
+/usr/bin/gzip -9 $BACKUP_HISTFILE
+cat $RM_BKUP_FILE_LOG
+exit 0

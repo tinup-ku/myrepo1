@@ -1,0 +1,66 @@
+#!/bin/bash -x
+#==============================================================================
+#Change Log:
+#
+# When          Who                     What
+# ----          ---                     ----
+# 06.14.2012    Mahesh Gurugunti	Created VMTools Installation(Installs and configures the vmtools)A
+# 09.10.2013	J. Wu			Updated to include HP
+#
+#==============================================================================
+#!/bin/bash
+
+#Install the VMtools RPMs (please note that YUM client should be configure before this needs to be exec'd )
+#UNDER CONSTRUCTION - Mahesh
+vendor=`dmidecode -s system-manufacturer | tr '[A-Z]' '[a-z]'`
+
+function install_vmware {
+echo -e " Installing the VMTools RPMs now.....\n" >> ${INSTLOG}
+
+rpm -qa |grep -i vmwaretools 2>&1 > /dev/null
+    if [ $? -ne 0 ]; then
+	yum --enablerepo=* install vmware-tools.x86_64 -y
+	echo "VMTools sucessfully installed....\n" >> ${INSTLOG}
+    else
+	yum --enablerepo=* upgrade vmware-tools.x86_64 -y
+	echo "VMTools sucessfully got upgraded...\n" >> ${INSTLOG}
+fi
+}
+
+function install_ibm_dsa {
+    echo -e "Installing IBM Portable DSA \n" >> ${INSTLOG} 
+    yum install -y tda-ibm-dsa
+    if [ $? -ne 0 ]; then
+	echo -e "ERROR: Installing IBM Portbale DSA FAILED\n"
+	exit 1
+    fi
+}
+
+function install_hp {
+    echo -e "Installing \n" >> ${INSTLOG}
+}
+
+case "$vendor" in
+    vmware* ) install_vmware ;;
+    *ibm* ) install_ibm_dsa ;;
+    *hp* ) install_hp ;;
+    * ) echo "ERROR: Bad vendor: $vendor"  
+	exit 1 
+	;;
+esac
+
+#RPMS for reference only-------
+#vmware-open-vm-tools.x86_64
+#vmware-open-vm-tools-common.x86_64
+#vmware-open-vm-tools-kmod.x86_64
+#vmware-open-vm-tools-nox.x86_64
+#vmware-open-vm-tools-xorg-drv-display.x86_64
+#vmware-open-vm-tools-xorg-drv-mouse.x86_64
+#vmware-open-vm-tools-xorg-utilities.x86_64
+#vmware-tools.x86_64
+#vmware-tools-common.x86_64
+#vmware-tools-nox.x86_64
+#xorg-x11-drv-vmware.x86_64
+##
+
+exit 0

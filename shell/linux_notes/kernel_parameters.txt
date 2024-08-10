@@ -1,0 +1,73 @@
+
+how to set limits for openfiles/processes per user:
+create a file like below:
+# cat /etc/security/limits.d/30-userid.conf
+userid       soft    nproc     16000
+userid       hard    nproc     18000
+
+once user logout and login back , new limits will be shown: ( it shows the max soft limits)
+$ ulimit -a | grep proc
+max user processes              (-u) 16000
+
+soft limit is number of file allowed to open
+hard limit is the highest number of files to open before no more file descriptor are allowed
+
+
+
+   ========
+kernel parameters:
+   ===========
+check kernel parameter:
+  sysctl -a 
+
+change a parameter permanently also write to the sysctl.conf file:
+  # sysctl -w <TUNABLE_CLASS>.<PARAMETER>=<TARGET_VALUE> >> /etc/sysctl.conf
+
+Apply config parameter via a config file without reboot:
+   # sysctl -p /etc/sysctl.d/<some_file.conf>
+
+
+what is the difference in "ulimit -a" and "sysctl -a"
+  sysctl setting works based on /etc/sysctl.conf, they are systemwide settings . for example to increase number of files open for any user 
+  first make sure /etc/sysctl.conf have enough open files systemwide
+  Next change the setting per user in limits.conf 
+
+  =================
+
+how to check max number of open files per process/user:
+
+what is this below for max file open:  ( it is File-system-wide limit for all users )
+# sysctl -a | grep file  
+fs.file-nr = 1792       0       797614
+fs.file-max = 797614
+
+
+and what is this ? ( open files )  ( per user limit - login with a specific user and check the limit )
+( configured in dir /etc/security/limits.d )
+
+]# ulimit -a | grep file  ( limits for user root )
+core file size          (blocks, -c) 0
+file size               (blocks, -f) unlimited
+open files                      (-n) 1024
+file locks                      (-x) unlimited
+
+   ==============================
+
+you can change the per user limits in file /etc/security/limits.conf )
+
+Check all hard limit ( not allowed beyond this )
+ulimit -Ha
+
+check the soft limit ( it means a warning is issued at this point but not stopped here until hard limit is reached )
+ulimit -Sa
+
+   =====================================
+For systemwide change of kernel parameters - change it in /etc/sysctl.conf
+
+   =======================================
+
+The difference is the scope, and how it's applied. Open file limits set via sysctls apply to the entire system, whereas limits set via /etc/security/limits.conf apply only to things that meet the criteria specified there. The other primary difference is that /etc/security/limits.conf limits are applied via ulimit, and thus can be changed more readily, while the sysctl limit is essentially setting up a memory allocation limit in the kernel itself.
+
+As a general rule, you almost always want to use /etc/security/limits.conf, even if you're setting global limits with the wildcard match there, as it is a bit more reliable, and things usually fail more gracefully when hit with ulimit restrictions than hitting kernel memory allocation limits.
+
+  =========================================

@@ -1,0 +1,23 @@
+
+ tar cvfz test.tgz test
+ tar tvfz test.tgz
+ tar xvfz test.tgz
+
+Tar with preserver permissions on files:
+
+cd ${SPLUNK_HOME} && tar czpf etc-splunk-${version}.tar.gz etc/
+
+     =============================
+Encrypt: 
+% tar cz folder_to_encrypt | \
+      openssl enc -aes-256-cbc -e > out.tar.gz.enc
+
+Decrypt
+
+ % openssl enc -aes-256-cbc -d -in out.tar.gz.enc | tar xz
+
+   ===================================
+ZIP
+ cd /opt/splunk ; zip etc-BACKUP-`date +%Y%m%d%H%M`.zip -r etc
+Unzip
+cp backup.zip /var/tmp ; cd /var/tmp ; unzip backup.zip

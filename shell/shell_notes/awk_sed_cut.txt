@@ -1,0 +1,299 @@
+
+
+    ============================
+
+# script to replace HOSTNAME to FQDN and also convert all other lines uppercase to lowercase in file env and write to tdaenv.txt
+# cat facts.sh
+#kind: snippet
+#name: add_tdaenv_facts
+#!/bin/bash
+ISPE=
+if [ -z "" ] || [ "" == "false" ] ; then
+    mkdir -p /etc/facter/facts.d
+    /bin/sed 's/HOSTNAME/FQDN/g' /etc/tda/env > /etc/facter/facts.d/tdaenv.txt && sed -i 's/\(.*\)/\L\1/' /etc/facter/facts.d/tdaenv.txt
+else
+    mkdir -p /etc/puppetlabs/facter/facts.d
+    /bin/sed 's/HOSTNAME/FQDN/g' /etc/tda/env > /etc/puppetlabs/facter/facts.d/tdaenv.txt && sed -i 's/\(.*\)/\L\1/' /etc/puppetlabs/facter/facts.d/tdaenv.txt
+fi
+
+
+ ================================
+
+
+
+
+using session from - https://www.youtube.com/watch?v=BR3qgAX3JM0
+
+sed - search/replace/edit the input data
+      works per line to search/replace text or delete line
+      can find text based on regex and work on it
+      can back-reference text put in parenthesis and access them as \1 \2
+      
+awk - search/extract, summarising and rearranging data
+      Good for processing structured data
+      you will need at least one block -  { }
+      If exist, A "BEGIN" block executed once before any input is read
+      If exist, A "END" block is excuted only once and at the end
+      awk set certain values dynamically like - NF,NR,RS,FS,ORS,OFS
+            RS - record seperator
+            FS - field seperator
+            NF - number of fields  e.g. cat text | awk '{print NF}' 
+            NR - record number ( line number of the input file )
+            ==================
+sed & awk  - search and extract
+     from below file print the value of java.heap.size.initial
+# cat txt
+sum=110
+java.heap.size.initial = 100
+abc=2
+
+using sed:
+sed -n -e '/java.heap.size.initial/ s/.*\= *//p' txt
+
+using awk:
+awk '/^java.heap.size.initial/{print $NF}' txt
+
+         ==============
+
+sed - work on specific line:
+    cat text | sed -e '2s/\(t\)eh/\1he/ig'
+        - execute the s command on line number 2
+        - search for "teh/Teh" and store "t/T"  to back-reference later as \1
+        - replace the the/The with the/The
+        - do it global with flad "g" ( it does only first match otherwise )
+        - ignore case while matching - flag "i"
+
+ sed - find a line and append some text to it.
+       sed -i "/^GRUB_CMDLINE_LINUX/ s/quiet\"\$/quiet ipv6.disable=1\"/" grub
+            -  "-i" is for inline change that means file grub will be changed 
+            - get the line starting with GRUB_CMDLINE_LINUX - /^GRUB_CMDLINE_LINUX/
+            - search the pattern at end of line- quiet" 
+                           find at the end of line using $  - s/quiet\"\$
+            - replace it with- quiet ipv6.disable=1" 
+            - changing the file grub
+
+sed - append hello after 3 line:
+  sed -i '3a\hello' txt
+
+sed - append hello at the end of file:
+ sed -i '$a\hello' txt
+
+
+sed ( replace string middle of line ) - execute command "hostname -s" and output is replaced/inserted middle of line.
+  sudo sed -ri "s|(<unique-host-id>).*(</unique-host-id>)|\1$(hostname -s)\2|" /var/tmp/controller-info.xml
+  it replace below line:
+             <unique-host-id>host-id</unique-host-id>
+  to
+             <unique-host-id>prdjclstosmbl08</unique-host-id>
+
+
+
+sed "d" commands: ( delete )
+    To delete lines
+      cat text | sed '2d'       # delete line # 2
+      cat text | sed '2!d'      # delete all other lines except 2
+                                  (notice "!" is after 2
+
+    delete range of lines ( first  line number):
+    cat -n /root/.bash_history
+    sed -i 924,928d /root/.bash_history
+
+
+sed : delete all blank lines 
+     sed -e '/^\( \|\t\)*$/d'   # find space or tabs and delete the line   
+       or
+     sed -e '/^[ \t]*$/d'       # delete blank lines
+           
+
+awk: Insert some space between two variables:
+  cat somefile | awk '{ print $2"    "$1 }'
+
+awk: get the line with text "swap" and show $2 and add "M" in end ( Append M at end )
+     free -m | awk '/^Swap/{print $2" M"}'
+
+awk: get a line and replace the text and print 
+   blkid | awk '/\/dev\/dm-0/{gsub("\"","",$2);gsub("UUID=","",$2);print $2}'
+    Above will get the line-
+        /dev/dm-0: UUID="b2a70cf1-e32c-432a-92dd-02a13e14dff3" TYPE="ext4"
+    and print the text-
+         /dev/dm-0: UUID="b2a70cf1-e32c-432a-92dd-02a13e14dff3" TYPE="ext4"
+    gsub is used to substitute UUID= to blank 
+
+
+awk: reassign variables:
+  cat somedata | awk '{ var1 = $2; var2 = $3; var3 = $4; average = ( var1 + var2 + var3 )/3 ; print average }'
+        semi-colon means end of statement
+
+print all even line in a file using awk:
+awk: Using expression in "awk"
+     awk 'expression{block}' also awk'regular-expression{block}'
+     expression should return value true or false.. ( 0 is false )
+     example - cat somefile | awk 'NR % 2 == 0 { print }'
+         Above NR - line number 
+         % - modulo (or remainder ), so the line number is divided by two and remainder is checked if it zero
+         it will return all ever lines so all evenlines in a file are printed
+
+   ===========
+
+print first column for a command output....
+  usind sed
+    ps -e | grep snmpd | sed 's/^ *//' | sed 's/ .*//'
+  using awk..
+    ps -e | grep snmpd | sed 's/^ *//' | awk '{ print $1}'
+
+ ===========
+awk: Using "if" with awk:
+
+          df --local -P | \
+          awk {'if (NR!=1) print $6'} | \
+   Other examples:
+     df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -type d \( -perm -0002 -a ! -perm -1000 \)
+
+     Find world writable files:
+       df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -type f -perm -0002       
+     Find un-owned files and directories:
+       df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -nouser -ls
+     Find un-group files and directories:
+       df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -nouser -ls
+     Find SGID system executables:
+       df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -type f -perm -2000
+     Find SUID system executables:
+       df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -type f -perm -4000
+     Show user with password field empty:
+       awk -F: '($2 == "" ) ' /etc/shadow
+
+
+ ================
+awk: grep ( pattern matching  using  awk)
+
+  gpg --with-fingerprint /etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-6 2>/dev/null | \
+          awk -F= '/fingerprint/ {print $2}'
+  print all lines which starts with C
+    cat somefile | awk '/^C/{ print }'  or use - awk '$1 == "C" { print }'
+  Negate: don't print line starting with C
+    cat somefile | awk '! /^C/{ print }'
+  print line in a range- all lines in-between and including lines starting with C and N
+    cat somefile | awk '/^C/,/^N/ { print }'
+  print all line in-between line starting with C and line number 7
+    cat somefile | awk '/^C/, NR==7 { print }'
+  Change the Record-seperator and field-seperator: ( to process the unix mailbox file )
+    cat mbox | awk 'BEGIN{ RS="\n\nForm "; FS="\n"} NR==2{print $1 }'
+
+  Running a more complex example from a awk file:
+   #we are giving station-name in command line, and deleting in BEGIN block else it will be taken as file-name in command.
+   cat extract.awk-
+     BEGIN {
+       RS="\nStation No. "
+       FS="\n"
+       station_name = ARGV[1]
+       delete ARGV[1]
+     }
+     {
+     
+     }
+
+
+=================
+awk: if and && with awk
+ egrep -v "^\+" /etc/passwd | awk -F: '($1!="root" && $1!="sync" && $1!="shutdown" && $1!="halt" && $3<500 && $7!="/sbin/nologin") {print}'
+
+ ===============
+
+Parsing a file using either grep or awk or sed:
+cat file
+Expression loweWallrhoPhi :  sum=-6.97168e-09
+Expression leftWallrhoPhi :  sum=6.97168e-09
+Expression lowerWallPhi :  sum=-5.12623e-12
+
+extract the valur of sum from each line
+
+
+while read line; do
+    echo "$line" | grep -oP 'sum=\K.*'     > $(echo "$line" |awk '{print $2}');
+   #echo "$line" | awk -F"=" '{print $NF}' > $(echo "$line" |awk '{print $2}');
+   #echo "#line" | sed 's/^.*sum=//'       > $(echo "$line" |awk '{print $2}');
+done < file
+
+
+  ================
+check for text with leading spaces:
+check for "auth" or auth with leading spaces in file inetd.conf
+if [ "$(egrep '(^[[:space:]]*auth)|^auth' inetd.conf)" != "" ];then
+    echo "auth:exist"
+else
+    echo "auth:does_not_exit"
+fi
+
+  ===============
+
+and More
+
+ls -l | awk '$6 == "Dec"'
+------------------
+awk:
+awk print column 5:
+$ ls -la |awk '{print $9}'
+print column-3 and than column-1
+cat list | awk '{print $3, $1}'
+print last column
+ls -l | awk '{print $NF}'
+
+----------------
+awk syntax:( another way of using awk)
+awk '/search pattern1/ {Actions}
+     /search pattern2/ {Actions}' file
+for example
+---------------
+sed:
+Remove first character of line if it is a digit:
+sed -e 's/^[0-9]//g' txt
+If multiple digits need to be removed at the beginning of line use below:
+sed -e 's/^[0-9]//g' -e 's/^[0-9]//g' -e 's/^[0-9]//g' txt
+         
+grep "NOTIFY|" ../local/logs/US-SAM_IsRoot.log | awk '{FS="|"}{print  $2"_"$3 }' |sed 's/ //g' |sort -u >/var/tmp/test1
+
+see ( search and replace): remove the spaces-
+sed 's/ //g'
+
+
+sed:
+Make two/multiple search and replace in one command like below:  search pattern like -  [SISPI-HPUX-xyz.1]  and [OSSPI-HPUX-xyz.1] and remove them.
+
+cat txt | sed -e 's/ \[SISPI-HPUX.*\]//' -e 's/ \[OSSPI-HPUX.*\]//'
+       
+pattern matching and extraction using sed:
+Below will extract string in braces:
+$ echo "default_78550" {ed45ddb8} | sed -e 's/.* \({.*}\)/\1/' -e 's/{//g' -e 's/}//g'
+ed45ddb8
+      
+Delete a line if pattern "hello" is in line in a file:
+sed -i '/hello/d' ./txt
+    -----
+
+Delete all blank lines in a file:
+$ sed '/^$/d' file
+-------------------
+cut:
+1) cut by delimiter in the line:
+
+egrep "DESCRIPTION|SEVERITY" * | cut -d":" -f2
+
+2)cut by the character position in a line (show the columns 22 to 35 for each line)
+
+pa_status | cut -c22-35
+
+Cut: example - get the ip, and setup the gateway and broadcast address
+IPADDR=`ip route get default 255.255.255.255 | grep broad | awk '{ print $6 }'`
+GATEWAY=`echo ${IPADDR} | cut -d"." -f1-3`.254
+BROADCAST=`echo ${IPADDR} | cut -d"." -f1-3`.255
+NETWORK=`echo ${IPADDR} | cut -d"." -f1-3`.0
+------------------------
+
+sort:
+
+sort on field 2 in a file
+
+#sort -k 2 <file-name>
+
+-------------------------
+

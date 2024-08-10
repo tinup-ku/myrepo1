@@ -1,0 +1,31 @@
+Vim: 
+
+search for string in vi which have spaces:
+:?any string with spaces
+
+    ======
+Move to matching braces or parenthesis = use % key
+
+  =====
+change the vim colors...
+put below in ~/.vimrc
+
+syntax on
+color desert
+
+  ===========
+
+shift code block right:
+
+# cat vimrc
+set expandtab
+set shiftwidth=2
+set softtabstop=2
+
+Invoke above custom vimrc from with vim ( if not able to update the .vimrc in home dir )
+
+# vim -u ./vimrc txt_file
+
+select the code block and shift using the key >
+Adjust the shiftwidth in vimrc for number of spaces to use
+

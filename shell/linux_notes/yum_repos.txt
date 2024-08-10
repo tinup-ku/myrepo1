@@ -1,0 +1,63 @@
+
+Apache server issues:
+
+httpd server giving permissions denied:
+check dir permissions as - 755
+and files as 644
+
+have below in httpd.conf
+
+<Directory />
+    AllowOverride none
+    Require all granted
+</Directory>
+
+ ==================
+check the link for details for the steps:
+  https://www.cloudera.com/documentation/enterprise/5-5-x/topics/cdh_ig_yumrepo_local_create.html
+  ===================
+Steps:
+
+Download the repo file in  /etc/yum.repos.d/ from vendor
+
+Install a web server such as apache/lighttpd on the machine that hosts the RPMs
+
+Install packages
+  sudo yum install yum-utils createrepo
+
+Download the yum repository into a temporary location
+  reposync -r cloudera-cdh5 
+ 
+
+     ---------
+Put all the RPMs into a directory served by your web server, such as   /var/www/html/apprepo/RPMS
+
+Make sure you can curl to this:
+  http://<yourwebserver>/apprepo/RPMS
+   ------------
+   or if you want to serve from any other dir like - /app/apprepo
+    create a apache alias for it- 
+    cat /etc/httpd/conf.d/repo.conf
+    Alias /puppetrepo "/app/puppet5"
+   ------------
+
+Run this in the dir where all rpm's are available:
+  createrepo .
+
+Edit the repo file you downloaded in step 1 and replace the line starting with baseurl= or mirrorlist= with baseurl=http://<yourwebserver>/apprepo/RPMS
+ Save the file back to /etc/yum.repos.d/.
+
+chech the local repo with "yum repolist "
+and
+
+[root@devctlvpptapp01 ~]# curl http://localhost/puppetrepo/repodata/repomd.xml
+
+  =============
+
+other commands:
+ Update repository:
+    # createrepo --update /var/www/html/repos/centos/6/6
+ 
+  # rsync -avz rsync://centos.ar.host-engine.com/6.6/os/x86_64/ /var/www/html/repos/centos/6/6/
+
+  =============

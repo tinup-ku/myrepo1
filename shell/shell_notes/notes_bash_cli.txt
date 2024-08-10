@@ -1,0 +1,98 @@
+
+
+
+
+
+  ==============
+
+
+Colon ":" is used for no operation or return "true" like in below
+
+if command; then : ; else ...; fi
+or below
+ /bin/systemctl daemon-reload >/dev/null 2>&1 ||  :
+
+
+  =========
+
+   &>/dev/null  ( redirect all to device null   )
+   2>&1    ( stderr to stdout)
+
+
+==========
+
+Bash cli shortcut:
+
+  Moving:
+  alt+b alt+f 
+
+  delete word:
+  alt+d
+
+  repeat last line:
+  ctrl +p
+  
+  repeat last argument:
+  alt + .
+
+Cut/paste line without mouse:
+  Bash - cut the current line 
+  control + a
+  control + k enter
+
+  paste the line from buffer ( above )
+  control + y enter
+
+ ====================
+
+
+formatting:
+  echo output not showing multiple lines:
+     use this line:
+        IFS=$'\n'        
+  
+
+find duplicate lines in a file linux:
+  sort <filename> | uniq -c
+
+compate two files and show duplicates: ( -12 is for file1 and file2 ) ( common lines )
+   comm -12 <(sort tmpfile1 ) <(sort tmpfile2 )
+
+Remove duplicate lines from a file:
+  awk '!seen[$0]++' filename
+
+   ===========
+Take out anything in file1 from file2 ( matches on first work only )
+$ cat reduce.sh
+#!/bin/bash
+# bash reduce.sh file1 file2 ( file1 is small &  file2 is big )
+# remove all lines present in file1 from file2
+file1=$1
+file2=$2
+cat $file1 | awk '{print $1}' > temp_file1
+cat $file2 | awk '{print $1}' > temp_file2
+comm -13 <(sort temp_file1) <(sort temp_file2)
+rm temp_file1 temp_file2
+#comm -13 <(sort servers.1800.ucm_working) <(sort servers.1800.ucm_not_working)
+
+  ==================
+
+
+grep with "OR"
+grep -E 'pattern1|pattern2' filename
+
+   ====
+
+   ====
+ping check:
+
+for i in `cat txt`; do ping -c 1 $i &>/dev/null; if [ $? -ne 0 ] ; then echo "$i failed"; else echo "$i pass" ; fi ; done
+
+   ====
+Remote ssh:
+grep something in a file and assign to a varialble and print the variable:
+ssh -q -o "PasswordAuthentication=no" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=5 ste04lvtapapp05.iteclientsys.local "fo1=\`grep npectlvy /etc/yum.repos.d/*\`; echo "\$? \$fo1""
+
+
+
+

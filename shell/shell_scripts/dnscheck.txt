@@ -1,0 +1,39 @@
+#!/bin/bash
+
+for IP in `sort -u TADDM_IPs.txt`
+do
+
+        nslookup ${IP} 2>/dev/null | grep name | awk '{print $4;}' | sed -e 's/.$//g' >nslookup_reverse.out
+
+        REVERSE_COUNT=`wc -l <nslookup_reverse.out`
+
+        #echo ${IP} ${REVERSE_COUNT}
+
+        if [ ${REVERSE_COUNT} -gt 0 ]
+        then
+
+                #echo "Multipe FQDN associated with ${IP} FQDN Count ${REVERSE_COUNT} "
+
+                for FQDN in `cat nslookup_reverse.out`
+                do
+                        IP_FORWARD=`nslookup ${FQDN} 2>/dev/null | tail -2 | head -n 1 | awk '{print $2;}'`
+
+                        if [ "${IP_FORWARD}" = "server" ]
+                        then
+                                IP_FORWARD="NXDOMAIN"
+                        fi
+
+                        if [ "${IP}" = "${IP_FORWARD}" ]
+                        then
+                                # echo "   ${IP} ${FQDN}"
+                                :
+                        else
+                                echo "   ${IP} ${FQDN} - different forward returned IP ${IP_FORWARD}"
+                        fi
+
+                done
+
+        fi
+
+done
+

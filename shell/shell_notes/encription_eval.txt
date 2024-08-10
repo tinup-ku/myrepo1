@@ -1,0 +1,86 @@
+
+#!/bin/ksh
+# https://jira.schwab.com/browse/TOS-15327
+
+date_=$(date '+%m%d%Y_%H%M')
+
+
+[kum394@devctlvpptapp02 ~]$ cat .fman_creds
+fman_usr=test
+fman_pas=test123
+
+
+encript the above file:
+   gpg -c .fman_creds
+ and give the passphrace as "option"
+
+Now use the encripted file in script to decript and set two variables $fman_usr and $fman_pas
+    eval `gpg --batch --passphrase option -d ./.fman_creds.gpg` >/dev/null 2>&1
+
+Above, eval command will set two variables 
+
+sample script is below:
+
+[kum394@devctlvpptapp02 ~]$ cat puppet_report.sh
+#!/bin/bash
+
+{
+eval `gpg --batch --passphrase option -d ./.fman_creds.gpg` >/dev/null 2>&1
+} 2>/dev/null
+
+repo_out=$(curl -s -k -u ${fman_usr}:${fman_pas} -H "Accept: version=2,application/json" https://prdtxlvpptapp01.associatesys.local/api/hosts/devctlvpptapp10.iteclientsys.local/reports/last | python -m json.tool | grep updated_at  )
+
+repo_date=$(echo $repo_out | awk '{print $2}' | sed s/\"//)
+mydate=$(date -u +"%Y-%m-%d")
+
+#echo "$repo_date $mydate"
+if [[ $repo_date = $mydate ]]
+  then
+   echo "Puppet run Report-Foreman: All good "
+else
+   echo "Puppet run Report-Foreman: Failed "
+fi
+
+
+Another sample
+  ===================
+{
+eval `gpg --batch --passphrase option -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+{
+
+eval  `{
+  cat<<END
+  curl --verbose --insecure https://svc.kafka_splunk_prd:${kafka_prod}@$(uname -n):8443/connectors -X POST \
+       -H "Content-Type: application/json" \
+       -d '{
+             "name": "splunk-sink-pcf-logs-connector",
+             "config": {
+                         "connector.class": "com.schwab.kafka.connect.splunk.sink.SplunkSinkConnector",
+                         "tasks.max": "140",
+                         "topics": "pcf.log",
+                         "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+                         "key.converter.schemas.enable": false,
+                         "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+                         "value.converter.schemas.enable": false,
+                         "source.data.type":"PCF",
+                         "splunk.hec.uri":"https://svm1140cdc:8088,https://svm1141cdc:8088,https://svm1152cdc:8088,https://svm1153cdc:8088,https://svm0829bdc:8088,https://svm0830bdc:8088,https://svm0835bdc:8088,https://svm0836bdc:8088,https://cup4-007714:8088,https://cup4-007715:8088,https://cup4-007716:8088,https://cup4-007717:8088,https://svm1146cdc:8088,https://svm1147cdc:8088,https://svm1158cdc:8088,https://svm1159cdc:8088,https://svm5278bdc:8088,https://svm5279bdc:8088,https://svm5274bdc:8088,https://svm5275bdc:8088",
+                         "splunk.hec.ssl.validate.certs":false,
+                         "splunk.hec.max.retries":20,
+                         "splunk.hec.socket.timeout":120,
+                         "splunk.hec.token":"7c49808e-389c-4d38-8cc6-33841e75c709",
+                         "splunk.hec.max.batch.size":750,
+                         "event.processor.thread.pool": 13,
+                         "pcf.org.name.splunk.hec.index.mapping.enabled":true,
+                         "pcf.org.name.splunk.hec.index.mapping.config.file":"/opt/kafka/etc/pcf-connector-configs/pcf-org-name-splunk-index-config.json",
+                         "pcf.log.messages.include":true,
+                         "pcf.log.message.source.type.mapping.enabled":true,
+                         "pcf.log.message.source.type.mapping.config.file":"/opt/kafka/etc/pcf-connector-configs/pcf-log-message-sourcetype-mapping-config.json",
+                         "principal.service.name": "svc.kafka_splunk_prd",
+                         "principal.service.password": "${kafka_prod}"
+                       }
+           }'
+END
+}`
+} | tee /var/tmp/`basename $0`.${date_}.OUT

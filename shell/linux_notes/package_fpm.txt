@@ -1,0 +1,234 @@
+
+use fpm on - devctlvpptapp20
+
+scriplets values to use ( using $1 )
+
+Install  
+   preinstall ( $1 == 1 )
+   postinstall $1 == 1
+Unistall
+   preuninstall  $1 == 0
+   postuninstall $1 == 0
+
+upgrade
+   preinstall  $1 == 2 
+   postinstall $1 == 2
+   preuninstall  $1 == 1
+   postuninstall $1 == 1
+
+
+   ==============
+rhel6 scripts for ITM6base package
+
+[root@prdtxlvulsegw01 kum394]# rpm -q --scripts ITM6base
+preinstall scriptlet (using /bin/sh):
+if [ "$1" = "2" ]; then
+  /usr/bin/rpm -qa "ITM6base*" >/dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    echo "ITM6base update is not allowed"
+    exit 1
+  fi
+fi
+exit 0
+postinstall scriptlet (using /bin/sh):
+if [ "$1" = "1" ]; then
+  if [ -r "/etc/tda/env" ]; then
+    if [ -x "/opt/IBM/ITM/bin/tda-config-rtems-v4.sh" ]; then
+    /opt/IBM/ITM/bin/tda-config-rtems-v4.sh >/dev/null 2>&1
+    fi
+    if [ -x "/opt/IBM/ITM/bin/post-config.itm.lfa63.sh" ]; then
+    /opt/IBM/ITM/bin/post-config.itm.lfa63.sh >/dev/null 2>&1
+    fi
+    if [ -x "/etc/init.d/ITMAgents1" ]; then
+    /sbin/chkconfig --add ITMAgents1 >/dev/null 2>&1
+    /sbin/service ITMAgents1 start > /dev/null 2>&1
+    fi
+  fi
+fi
+exit 0
+preuninstall scriptlet (using /bin/sh):
+if [ "$1" = "0" ]; then
+  if [ -x "/etc/init.d/ITMAgents1" ]; then
+    /sbin/service ITMAgents1 stop > /dev/null 2>&1
+    /sbin/chkconfig --del ITMAgents1 >/dev/null 2>&1
+  fi
+fi
+exit 0
+
+    =====================
+
+rpm package scripts to setup a package for rhel6 & rhel7 ( Patrol agent ):
+
+preinstall scriptlet (using /bin/sh):
+if [ $1 -eq 1 ]; then
+  # Add patrol group if not already there
+  if ! getent group patrol > /dev/null 2>&1; then
+    groupadd -g 2009 patrol
+    if [ $? -ne 0 ]; then echo "Can't add group"; exit 1; fi
+  fi
+  # Add patrol user if not already there
+  if ! getent passwd patrol > /dev/null 2>&1; then
+    mkdir -p $r/opt/bts
+    useradd -m -d /opt/bts/patrol -g patrol -s /bin/bash -c "BMC Patrol Agent Account" patrol
+    if [ $? -ne 0 ]; then echo "Can't add user"; exit 1; fi
+  fi
+fi
+postinstall scriptlet (using /bin/sh):
+if [ $1 -eq 1 ]; then
+
+  tar -xf /opt/patrol/common/security/bin_v3.0/linux-2-6-x86-64-nptl.tar -C /opt/patrol/common/security/bin_v3.0
+  RELEASE=`grep 'Red Hat Enterprise Linux Server release' /etc/redhat-release | sed -e 's/Red Hat Enterprise Linux Server release //' -e 's/ ([^)]*)$//' | cut -d. -f1 `
+
+  # Checking hostconfig environment
+  if [ ! -f /etc/tda/env ]; then
+        echo "Hostconfig data not found"
+        exit 1
+  fi
+
+  . /etc/tda/env
+
+        case "$BUILDING-$ENV" in
+                JC-PRD )
+                        HOST="tsimdr01.associatesys.local"
+                ;;
+
+                ED-PRD )
+                        HOST="tsimdr01.associatesys.local"
+                ;;
+
+                CT-PRD )
+                        HOST="tsimtx01.associatesys.local"
+                ;;
+
+                TX-PRD )
+                        HOST="tsimtx01.associatesys.local"
+                ;;
+
+                *-PRD )
+                        HOST="tsimtx01.associatesys.local"
+                ;;
+
+                * )
+                        HOST="npectlvbtsvip01.pteassociatesys.local"
+                ;;
+
+        esac
+
+        sed -i 's/npectlvbtsvip01.pteassociatesys.local/'"${HOST}"'/g' /opt/patrol/Install/insthist/.lastanswers.sav
+        sed -i 's/npectlvbtsvip01.pteassociatesys.local/'"${HOST}"'/g' /opt/patrol/Patrol3/pmg/migrate.cfg
+        sed -i 's/npectlvbtsvip01.pteassociatesys.local/'"${HOST}"'/g' /opt/patrol/Patrol3/tda_config_reload.out
+        sed -i 's/npectlvbtsvip01.pteassociatesys.local/'"${HOST}"'/g' /opt/patrol/Patrol3/Linux-2-6-x86-64-nptl/lib/integrationservice.current
+        sed -i 's/npectlvbtsvip01.pteassociatesys.local/'"${HOST}"'/g' /opt/patrol/Patrol3/lib/integrationservice.current
+
+  if [ "$RELEASE" -eq "6" ]; then
+        cp -p /etc/patrol.d/bak/PatrolAgent /etc/init.d/
+        chkconfig --add PatrolAgent
+        /etc/init.d/PatrolAgent start
+  fi
+
+  if [ "$RELEASE" -eq "7" ]; then
+        cp -p /etc/patrol.d/bak/PatrolAgent.service /etc/systemd/system/
+        /bin/systemctl enable PatrolAgent.service > /dev/null 2>&1
+        /bin/systemctl daemon-reload > /dev/null 2>&1
+        /bin/systemctl start PatrolAgent.service
+  fi
+
+fi
+preuninstall scriptlet (using /bin/sh):
+  RELEASE=`grep 'Red Hat Enterprise Linux Server release' /etc/redhat-release | sed -e 's/Red Hat Enterprise Linux Server release //' -e 's/ ([^)]*)$//' | cut -d. -f1 `
+  if [ "$RELEASE" -eq "6" ]; then
+        service PatrolAgent stop
+        chkconfig --del PatrolAgent
+        userdel -fr patrol
+        rm -rf /etc/init.d/PatrolAgent /opt/patrol/common/security/bin_v3.0/linux-2-6-x86-64-nptl /opt/patrol/common/security/log_v3.0/* /opt/patrol/Patrol3/bww/udc/logs/* /opt/patrol/Patrol3/config/* /opt/patrol/Patrol3/log/* /opt/bts
+
+  elif [ "$RELEASE" -eq "7" ]; then
+        /bin/systemctl stop PatrolAgent.service
+        /bin/systemctl disable PatrolAgent.service > /dev/null 2>&1
+        /bin/systemctl daemon-reload > /dev/null 2>&1
+        userdel -fr patrol
+        rm -rf /etc/systemd/system/PatrolAgent.service /opt/patrol/common/security/bin_v3.0/linux-2-6-x86-64-nptl /opt/patrol/common/security/log_v3.0/* /opt/patrol/Patrol3/bww/udc/logs/* /opt/patrol/Patrol3/config/* /opt/patrol/Patrol3/log/* /opt/bts
+  fi
+
+   ================
+use fpm here:
+[devctlvpptapp15 ~]# fpm --version
+Doing `require 'backports'` is deprecated and will not load any backport in the next major release.
+Require just the needed backports instead, or 'backports/latest'.
+1.11.0
+
+   ==============
+
+
+Fpm install rhel6
+
+ 1037  yum install ruby-devel gcc libyaml-devel
+ 1038  curl -L get.rvm.io | bash -s stable
+ 1039  source /etc/profile.d/rvm.sh
+ 1040  rvm install 1.9.3
+ 1041  rvm use 1.9.3 --default
+ 1042  rvm rubygems current
+ 1043  gem install fpm
+ 1044  fpm --help
+
+
+  ==============
+
+sample script to create package:
+
+cat create.sh
+#!/bin/bash
+/usr/local/bin/fpm -s dir -t deb -v 0.9.1 -n storm --prefix /usr/lib \
+-d "libzmq1 (>= 2.1.4)"          \
+-d "libjzmq (>= 2.1.4)"          \
+-m "pkumar@example.com"         \
+--vendor "pkumar@example.com"   \
+--url "http://storm-project.net" \
+--description "Storm is a distributed realtime computation system." \
+storm
+
+
+-s source dir
+-t type which is debian here
+-n storm
+--prefix  Destination dir
+-d dependency package
+
+  =====================
+fpm sample:
+workdir="/var/tmp/source"
+source="/var/tmp/source"
+
+
+${fpm} \
+        -t rpm \
+        -s dir \
+        -C ${source} \
+        -x scripts \
+        -n ${project} \
+        -v ${build} \
+        --iteration ${release} \
+        --rpm-user ${user} \
+        --rpm-group ${group} \
+        --description "${desc}" \
+        ${os_specific}
+
+  notes:
+   -s source-type ( dir )
+   -t output-type ( rpm )
+   -C change dir to here before searching for files
+   -x Exclude paths matching pattern
+   -n The name to give to the package
+   -v The version to give to the package
+
+  ==========================
+
+
+
+
+
+
+
+
+
+  

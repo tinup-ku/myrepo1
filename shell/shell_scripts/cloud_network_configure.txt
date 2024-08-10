@@ -1,0 +1,94 @@
+#!/bin/bash
+
+#==============================================================================
+# RHEL7 Cloud-init image - script to create default nic configuration
+# We know that our image only has 2 interfaces, eth0 and eth1, and will ignore
+# aux-only machines with 1 aux interface (aux may go away). If there are more
+# than 2 interfaces we will assume that eth0 is prd and eth1 is aux, and then
+# ignore all other interfaces.
+#
+#Change Log:
+#
+# When          Who             What
+# ----          ---             ----
+# 02.24.2016    J. Ritter       Created inital script
+# 03.15.2017    J. Ritter       Adding code to support non-aux
+#
+#==============================================================================
+
+NIC_HOME="/etc/sysconfig/network-scripts"
+
+if [ -f /etc/sysconfig/network ]; then
+        rm -f /etc/sysconfig/network
+fi
+
+# Default RHEL7 behavior is to use FQDN by default
+#sed -i -e 's/\..*//g' /etc/hostname
+/usr/bin/hostnamectl set-hostname `hostname -s`
+
+cat > /etc/sysconfig/network << _EOF_
+NETWORKING_IPV6=no
+NETWORKING=yes
+HOSTNAME=`hostname -s`
+NOZEROCONF=yes
+RES_OPTIONS="timeout:1 attempts:1 rotate"
+_EOF_
+
+if [ -f ${NIC_HOME}/ifcfg-eth0 ]; then
+        rm -rf ${NIC_HOME}/ifcfg-eth0
+fi
+ETHER="`ip link show eth0 |tr '\n', ',' | sed -e 's/^.*ether\ //g' -e 's/\ .*$//g'`"
+cat > /etc/sysconfig/network-scripts/ifcfg-eth0 << _EOF_
+# COnfigured by cloud-init
+DEVICE="eth0"
+BOOTPROTO="dhcp"
+DHCP_HOSTNAME="`hostname -s`"
+HWADDR="${ETHER}"
+IPV6INIT="no"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+TYPE="Ethernet"
+USERCTL="no"
+PEERDNS="yes"
+_EOF_
+
+ifdown eth0
+ifup eth0
+
+ip addr|grep eth1 2>&1 >/dev/null
+if [ $? -eq 0 ]; then
+
+        if [ -f ${NIC_HOME}/ifcfg-eth1 ]; then
+                rm -rf ${NIC_HOME}/ifcfg-eth1
+        fi
+
+ETHER="`ip link show eth1 |tr '\n', ',' | sed -e 's/^.*ether\ //g' -e 's/\ .*$//g'`"
+cat > /etc/sysconfig/network-scripts/ifcfg-eth1 << _EOF_
+# COnfigured by cloud-init
+DEVICE="eth1"
+BOOTPROTO="dhcp"
+DHCP_HOSTNAME="`hostname -s`"
+HWADDR="${ETHER}"
+IPV6INIT="no"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+TYPE="Ethernet"
+USERCTL="no"
+PEERDNS="no"
+_EOF_
+
+        ifdown eth1
+        ifup eth1
+fi
+
+/bin/systemctl restart network.service
+
+if [ -f /root/configure_Cloud_Network ]; then
+        mv /root/configure_Cloud_Network /root/DISABLED.configure_Cloud_Network
+        chmod 0644 /root/DISABLED.configure_Cloud_Network
+fi
+
+if [ -f /etc/rc3.d/S12configure_TDANetwork ]; then
+        mv /etc/rc3.d/S12configure_TDANetwork /root/DISABLED.S12configure_TDANetwork
+        chmod 0644 /root/DISABLED.S12configure_TDANetwork
+fi
