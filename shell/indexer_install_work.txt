@@ -1,0 +1,377 @@
+Question: where hot & cold FS configured in splunk config files.
+  check this file: ${SPLUNK_ETC}/splunk-launch.conf
+
+     =============
+Training Index cluster - JIRA:  https://jira.company.com/browse/SED-375
+CM: http://sname1-011644.us.global.company.com:8000
+
+Login to CM and find out search heads in cluster:
+   SH: https://sname2c-005377.csdev.corp:8000
+Next steps: 
+Find out the deployment servers for the UF's
+Check all UF forwarding to this cluster and make sure they have the new indexers in output.conf
+
+   ============
+
+Firewall checks: ( also below in document )
+    Cluster Master to <--> All Indexers (port 8089,9990)
+    License server            <-->  Indexers (port 8089,9990)
+    SH               <--> Cluster Master (port 8089)
+
+    ===========
+
+Install: 
+Splunk EE is installed on root file-system
+separate partition are created for hot and cold
+1) setup the disk - check other servers and do accordingly
+    sample disk setup script: Implement_new_Indexer_Disk_VM ( in /export/home/ad.punit.kumar/install_work )
+    sample script for Indexer on VM  root@sname2-008140 ~/scripts -> cat Implement_new_Indexer_VM
+1 ) First copy /.splunk to new servers otherwise user-seed for admin account will not work
+2) Create home dir for service account otherwise splunk_offline will not work
+2) Install Splunk:
+mount sname.dev.company.com:/infra/softdepot /mnt
+"cd /mnt/Splunk; ./install_splunk.systemD -v 9.2.2"
+Convert to service account: 
+jldsh -eg New_RHEL9_All_TEST_Indexers -s ./Convert_Splunk_to_svcacct
+Apply  kernel params 
+Disable kvstore
+update ${SPLUNK_ETC}/splunk-launch.conf for hot and cold
+Add license manager - check license master on existing server and use script accordingly
+Copy files from existing indexer to new indexer ( dir - /opt/splunk/etc/system/local except server.conf )
+Add server to indexs cluster ( use script like )
+Using script:
+Update the script first for CM and password:
+For training cluster, use below script
+root@sname2-008140 ~/add_indexer -> ls -la add_indexer_training
+-rwxr-xr-x 1 root root 4334 Jun 12 12:42 add_indexer_training
+update below and run it from jump server ./add_indexer_training and answer site and indexer name ( restart splunk)
+master=sname1-011644.us.global.company.com
+secret_key='training'
+
+OR Manually edit server.conf just like existing server. site, clustering etc ( replace the hash key ) & restart
+
+Get the password from a existing server: ( run as service account )
+    /opt/splunk/bin/splunk show-decrypted --value '$7$is6eTEQfMkbA6ES7tQvMVYqakA5WvVHLG3FUuWGUwxJDKbwM2dT+wA=='
+
+  =====================================
+Data forwarding: ( not sure about below )
+Validate UF's are able to connect to new Indexers on 9990
+Validate CM can deploy apps to new indexers
+update outputs.conf on SH in cluster for new indexers ( /opt/splunk/etc/system/local/outputs.conf )
+Remove Old Indexers & Decomm ( Update Cluster config file )
+is there a deployment server installing apps on indexers ? how internal logs are forwarded for indexers
+check netstat -an | grep 9990 to see what is connecting
+
+    ==================
+Remove Indexers from the Indexer cluster
+First  the indexers off-line
+Get the guid of indexer to remove from cluster manager:
+splunk list cluster-peers
+Remove from cluster manager:
+splunk remove cluster-peers -peers <guid>,<guid>,<guid>,...
+
+OR
+You can also remove the peer from the manager's list by restarting splunkd on the manager.
+
+   ====================== 
+
+
+From JIRA: https://jira.company.com/browse/SED-375?filter=-1
+General Tasks:
+1. Set up trust relationship from Control servers (DEV/QA/PROD) to new servers
+2. Install RHEL packages
+
+gdb
+gcc
+zip
+unzip
+nc, nmap
+3. Update /etc/security/limits.conf, /etc/sysctl.conf, /etc/security/limits.d/20-nproc.conf, and
+/etc/rc.local to disable THP
+4. Create splunk LVM/FS /opt/splunk
+5. Install splunk and port over ${SPLUNK_LOCAL} to new servers
+6. Convert splunk to service account (DEV: svc.eli_admin.dev; PROD:svc.eli_admin.prod)
+7. Update Control servers's $CLUSTER and inform Gerry to update Confluence page.
+https://confluence.company.com/display/SDM/List+of+Splunk+Servers
+
+Specific Tasks:
+1. Verify port connections (firewall )
+. From License master to new Indexers port 8089 and vice versa
+. From Cluster Master to new Indexers port 8089 and vice versa
+. From new Indexers to all SHCs port 8089 and vice versa
+. From SplunkUFs to new Indexers port 9990
+. From Splunk HECs to new Indexers port 9990 if applicable
+. Indexers replication port 9887 among indexers
+
+2. Add new RHEL9/Remove RHEL7 Indexer to/from index cluster
+
+3. Deploy Indexer's admin tools to ${LOCAL_BIN}:
+backout_splunk
+backout_splunk_install
+backup_splunk_etc
+check_detention_status
+re-enable_splunk
+run_splunk_offline
+set_idx_detention
+show_splunk
+splunk_offline
+start_splunk
+stop_splunk
+upgrade_splunk
+
+Note, stop_splunk is a symlink to splunk_offline
+
+Validate UF's are able to connect to new Indexers on 9990
+Validate CM can deploy apps to new indexers
+Remove Old Indexers & Decomm ( Update Cluster config file )
+4. Decomm RHEL7 servers
+
+     ============
+Validate CM can deploy to new indexers:
+  242  /opt/splunk/bin/splunk  validate  cluster-bundle
+  243  /opt/splunk/bin/splunk  show  cluster-bundle-status
+  244  /opt/splunk/bin/splunk  apply  cluster-bundle
+  245  /opt/splunk/bin/splunk  show  cluster-bundle-status
+
+    ====================================
+
+Indexer install Training indexers:
+   check the script: 
+     root@sname2-008140 ~/scripts -> cat Implement_new_Indexer_VM
+
+      =============================
+Doc:
+  Follow the doc for pre checks like: network, disks etc..
+ https://confluence.company.com/pages/viewpage.action?pageId=853868859
+
+Scripts: ( on jump server )
+ /scripts/Implement_new_Indexer_*
+- script is generic , pick the one which match to hard disk layout and update according to environment like:
+   service account, package name/version
+ - Remove any virtual drive which many already exist on the servers
+    e.g. perccli /c0/v1 del force
+
+  Kernel settings:  check this file: work_pkm/install_work/check_kernel_settings.sh
+ 
+mount sname.dev.company.com:/infra/softdepot /mnt
+Check below also:
+./install_splunk.systemD -prod
+
+Convert to service account: ./Convert_Splunk_to_svcacct
+
+     =================
+sample server.conf
+
+[general]
+site = site0
+serverName = <host-name>
+pass4SymmKey = $7$MHFS/GZc94a4mGht2Gp0706BtP8WBWB9Tgn75+bvKQBLZO0vfMPEww==
+
+[sslConfig]
+sslPassword = $7$Vkm/QLYinyQPwoRpzIV0yIZwNtt5GlPqJkdeH5rPfS8HQPfxgXc8wA==
+
+[lmpool:auto_generated_pool_download-trial]
+description = auto_generated_pool_download-trial
+quota = MAX
+slaves = *
+stack_id = download-trial
+
+[lmpool:auto_generated_pool_forwarder]
+description = auto_generated_pool_forwarder
+quota = MAX
+slaves = *
+stack_id = forwarder
+
+[lmpool:auto_generated_pool_free]
+description = auto_generated_pool_free
+quota = MAX
+slaves = *
+stack_id = free
+
+[license]
+master_uri = https://sname1-011642.us.global.company.com:8089
+
+[clustering]
+master_uri = https://sname2-008133.us.global.company.com:8089
+mode = searchhead
+multisite = true
+pass4SymmKey = $7$W0J4JP4jMMu5e2Z/ZzOB3HDKsKE8nEPLy3fCLSr615+SvcCUb4ZKnNG6a04l/w==
+
+
+
+    ======================
+
+
+
+Make sure to take df-hPl from servers
+-------------
+Node s0665bdc to clean
+-------------
+Filesystem                 Size  Used Avail Use% Mounted on
+devtmpfs                    63G     0   63G   0% /dev
+tmpfs                       63G  540K   63G   1% /dev/shm
+tmpfs                       63G   67M   63G   1% /run
+tmpfs                       63G     0   63G   0% /sys/fs/cgroup
+/dev/mapper/rootvg-rootlv  213G  5.7G  208G   3% /
+/dev/sda2                  2.0G  116M  1.9G   6% /boot
+/dev/sda1                  100M  9.9M   90M  10% /boot/efi
+/dev/mapper/coldvg-coldlv   20T  9.1T   11T  47% /opt/splunkindex_data
+/dev/mapper/hotvg-hotlv    4.4T   92G  4.2T   3% /opt/splunkindexhot_data
+tmpfs                       13G     0   13G   0% /run/user/0
+
+
+
+     ==================
+
+Using JLDSH:
+
+Cleanup:
+  852  08/26/2022 - 08:50:02 vi host_list
+  853  08/26/2022 - 08:55:54 jldsh -c host_list "pgrep splunkd"
+  855  08/26/2022 - 08:56:47 jldsh -c host_list "rpm -q splunk"
+  857  08/26/2022 - 08:57:19 jldsh -c host_list "rpm -e splunk -y"
+  858  08/26/2022 - 08:57:25 jldsh -c host_list "rpm -q splunk"
+  859  08/26/2022 - 08:58:43 jldsh -c host_list "ls -la /opt/splunk"
+  860  08/26/2022 - 08:59:48 jldsh -c host_list "cd /opt; rm -rf splunk"
+  861  08/26/2022 - 09:00:03 jldsh -c host_list "ls -la /opt/splunk"
+
+Login to hosts and remove entry from fstab then verify:
+  866  08/26/2022 - 09:01:14 jldsh -c host_list "df -hPl" | dshbak
+  867  08/26/2022 - 09:05:45 jldsh -c host_list "cat /etc/fstab" | dshbak
+  868  08/26/2022 - 09:06:07 jldsh -c host_list "mount" | dshbak
+  869  08/26/2022 - 09:06:21 jldsh -c host_list "df -hPl" | dshbak
+
+  875  08/26/2022 - 09:08:54 jldsh -c host_list "umount /opt/splunkindex_data" | dshbak
+  876  08/26/2022 - 09:09:14 jldsh -c host_list "umount /opt/splunkindexhot_data" | dshbak
+  877  08/26/2022 - 09:09:20 jldsh -c host_list "df -hPl" | dshbak
+
+  879  08/26/2022 - 09:10:12 jldsh -c host_list "lvs" | dshbak
+  880  08/26/2022 - 09:39:00 jldsh -c host_list "lvremove -f /dev/mapper/coldvg-coldlv" | dshbak
+  881  08/26/2022 - 09:39:07 jldsh -c host_list "lvs" | dshbak
+  882  08/26/2022 - 09:39:41 jldsh -c host_list "lvremove -f /dev/mapper/hotvg-hotlv" | dshbak
+  883  08/26/2022 - 09:39:45 jldsh -c host_list "lvs" | dshbak
+  884  08/26/2022 - 09:40:16 jldsh -c host_list "vgs" | dshbak
+  885  08/26/2022 - 09:40:52 jldsh -c host_list "vgremove -f coldvg" | dshbak
+  886  08/26/2022 - 09:41:05 jldsh -c host_list "vgremove -f hotvg" | dshbak
+  887  08/26/2022 - 09:41:11 jldsh -c host_list "vgs" | dshbak
+  888  08/26/2022 - 09:41:30 jldsh -c host_list "pvs" | dshbak
+  889  08/26/2022 - 09:42:09 jldsh -c host_list "pvremove -f /dev/sdb1" | dshbak
+  890  08/26/2022 - 09:42:38 jldsh -c host_list "pvremove -f /dev/sdc1" | dshbak
+  891  08/26/2022 - 09:42:44 jldsh -c host_list "pvs" | dshbak
+  892  08/26/2022 - 09:43:45 jldsh -c host_list "fdisk -l | grep '/dev/sd'" | dshbak
+  893  08/26/2022 - 09:44:35 jldsh -c host_list "perccli /c0/vall show" | dshbak
+  894  08/26/2022 - 14:35:23 jldsh -c host_list "perccli /c0/v1 del force" | dshbak
+  895  08/26/2022 - 14:35:35 jldsh -c host_list "perccli /c0/vall show" | dshbak
+  896  08/26/2022 - 14:35:48 jldsh -c host_list "perccli /c0/v2 del force" | dshbak
+  897  08/26/2022 - 14:35:51 jldsh -c host_list "perccli /c0/vall show" | dshbak
+  898  08/26/2022 - 14:37:57 jldsh -c host_list "perccli /c0/vall show | grep RAID" | dshbak
+Install Splunk:
+  899  08/26/2022 - 14:38:30 jldsh -c host_list "mount sname.dev.company.com:/infra/softdepot /mnt" | dshbak
+
+  902  08/26/2022 - 14:39:31 jldsh -c host_list "ls -la  /mnt/Splunk/latest" | dshbak
+  908  08/26/2022 - 16:01:28 jldsh -c host_list "cd  /mnt/Splunk; ./install_splunk.systemD -prod" | dshbak
+  909  08/26/2022 - 16:02:36 jldsh -c host_list "rpm -q splunk" | dshbak
+Remove init files form /etc/init*
+  911  08/26/2022 - 16:03:49 jldsh -c host_list "cd /etc; find | grep splunk" | dshbak
+  912  08/26/2022 - 16:04:05 jldsh -c host_list "cd /etc; find | grep splunk | xargs rm -f" | dshbak
+  913  08/26/2022 - 16:04:09 jldsh -c host_list "cd /etc; find | grep splunk" | dshbak
+Install systemd:
+   ( First check the script - ./Convert_Splunk_to_svcacct first for settings needed for rhel7 and rhel 8 )
+  915  08/26/2022 - 16:06:08 jldsh -c host_list -s /root/scripts/Convert_Splunk_to_svcacct
+  916  08/26/2022 - 16:07:04 jldsh -c host_list "pgrep splunkd" | dshbak
+  917  08/26/2022 - 16:07:32 jldsh -c host_list "show_splunk -s" | dshbak
+  918  08/26/2022 - 16:07:55 history
+  919  08/26/2022 - 16:33:43 jldsh -c host_list "show_splunk -s" | dshbak
+
+    ======================
+
+wipe /clean splunk cluster:
+root@svm0966cdc ~/SPLUNK_CLUSTERING -> cat /root/SPLUNK_CLUSTERING/wipe_clean_index_cluster
+#!/bin/ksh
+
+CM=sname7-005833
+echo "Stop Splunk on Cluster Master, sname7-005833, and all Indexers"
+jldsh -ew sname7-005833 -eg CD1_A_All_DC74_E-F_core_site1234 "systemctl stop Splunkd"
+echo "Remove splunk package"
+jldsh -ew sname7-005833 -eg CD1_A_All_DC74_E-F_core_site1234 "rpm -e splunk"
+echo "Wipe /opt/splunk and /opt/splunkindex_data"
+jldsh -eg CD1_A_All_DC74_E-F_core_site1234 "umount -l /opt/splunk;umount -l /opt/splunkindex_data"
+jldsh -eg CD1_A_All_DC74_E-F_core_site1234 "mkfs.ext4 -m 1 /dev/mapper/rootvg-splunklv;mkfs.ext4 -m 1 /dev/splunkvg/splunkindex_lv"
+echo "Mount  /opt/splunk and /opt/splunkindex_data"
+jldsh -eg CD1_A_All_DC74_E-F_core_site1234 "mount -a"
+
+    ======================
+Issues:
+Ensure service account is available on the server:
+Check the script for RHEL7 & RHEL8
+For RHEL7: ( use vastool )
+# Check if svc.eli_admin.prod is seen on search head
+/opt/quest/bin/vastool user checkaccess ${uid} |grep '^ALLOWED' >/dev/null
+#user=`sssctl user-checks ${uid}|awk '/homeDirectory/{print $NF}'`
+#echo ${user}|grep "${uid}" >/dev/null
+
+For RHEL8: ( use systemctl )
+# Check if svc.eli_admin.prod is seen on search head
+#/opt/quest/bin/vastool user checkaccess ${uid} |grep '^ALLOWED' >/dev/null
+user=`sssctl user-checks ${uid}|awk '/homeDirectory/{print $NF}'`
+echo ${user}|grep "${uid}" >/dev/null
+
+
+ ==================================================================
+
+Manual Install 8.1.5:
+  Follow the doc - /scripts/Implement_new_Indexer.NEW.8.1.5_TDA
+
+   ==========================================
+Cleanup for the server prod:
+[root@s0664bdc ~]# history
+    3  08/25/2022 - 14:17:04 pgrep splunkd
+    9  08/25/2022 - 14:17:35 rpm -e splunk
+   10  08/25/2022 - 14:18:04 cd /opt
+   12  08/25/2022 - 14:18:13 rm -rf splunk
+   13  08/25/2022 - 14:18:26 df -hPl
+   14  08/25/2022 - 14:18:45 vi /etc/fstab
+   15  08/25/2022 - 14:19:04 umount /opt/splunkindex_data
+   16  08/25/2022 - 14:19:11 umount /opt/splunkindexhot_data
+   17  08/25/2022 - 14:19:17 pvs
+   18  08/25/2022 - 14:19:28 lvs
+   19  08/25/2022 - 14:19:42 lvremove -f /dev/mapper/coldvg-coldlv
+   20  08/25/2022 - 14:19:53 lvremove -f /dev/mapper/hotvg-hotlv
+   21  08/25/2022 - 14:20:01 vgs
+   22  08/25/2022 - 14:20:16 vgremove -f coldvg
+   23  08/25/2022 - 14:20:28 vgremove -f hotvg
+   24  08/25/2022 - 14:20:30 vgs
+   25  08/25/2022 - 14:20:38 pvs
+   26  08/25/2022 - 14:20:54 pvremove -f /dev/sdb1
+   27  08/25/2022 - 14:21:04 pvremove -f /dev/sdc1
+   28  08/25/2022 - 14:21:41 fdisk -l|grep '/dev/sd'
+   29  08/25/2022 - 14:22:24 perccli /c0/vall show
+   30  08/25/2022 - 14:22:53 perccli /c0/dall show
+
+   32  08/25/2022 - 14:24:25 perccli /c0/v1 show
+   33  08/25/2022 - 14:25:01 perccli /c0/v1 del force
+   34  08/25/2022 - 14:25:13 perccli /c0/vall show
+   35  08/25/2022 - 14:25:30 perccli /c0/v2 del force
+   36  08/25/2022 - 14:25:42 perccli /c0/vall show
+   37  08/25/2022 - 14:25:58 perccli /c0/dall show
+   38  08/25/2022 - 14:26:13 perccli /c0/dall show all
+
+
+Install:
+   39  08/25/2022 - 14:26:57 mount sname.dev.company.com:/infra/softdepot /mnt
+   40  08/25/2022 - 14:27:02 cd /mnt/Splunk
+   45  08/25/2022 - 14:28:59 ./install_splunk.systemD -prod
+   46  08/25/2022 - 14:29:39 rpm -q splunk
+   47  08/25/2022 - 14:30:58 pgrep splunkd
+   48  08/25/2022 - 14:31:07 cd /etc/systemd/system
+   49  08/25/2022 - 14:31:08 ls
+
+Remove init stuff dropped by the above install script:
+   50  08/25/2022 - 14:31:34 cd /etc/init.d/
+   53  08/25/2022 - 14:31:54 vi splunk
+   54  08/25/2022 - 14:32:23 rm -f splunk
+   55  08/25/2022 - 14:32:29 cd /etc
+   56  08/25/2022 - 14:32:35 find|grep -i splunk
+   57  08/25/2022 - 14:32:59 find|grep -i splunk|xargs rm -f
+   58  08/25/2022 - 14:33:03 find|grep -i splunk
+   59  08/25/2022 - 14:34:02 uname -r
