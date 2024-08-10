@@ -1,3 +1,0 @@
-
-rhel6 service/daemon setup:
-  read the notes in home laptop in punit_tda/unix_new

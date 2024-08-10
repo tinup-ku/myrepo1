@@ -1,3 +1,0 @@
-
-convert to lower case
-$ echo "$a" | tr '[:upper:]' '[:lower:]'

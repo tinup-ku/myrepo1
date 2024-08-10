@@ -1,9 +1,0 @@
-
-check all service:
-
-  systemctl status | grep -i service
-  or
-  systemctl list-unit-files
-
-  ===========
-

@@ -1,4 +1,0 @@
-
-find something but ignore nfs:
-
- find / -not -fstype nfs -name log4*

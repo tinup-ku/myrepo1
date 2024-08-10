@@ -1,2 +1,0 @@
-
-/usr/bin/logger -t logrotate "ALERT exited abnormally with [$EXITVALUE]"
