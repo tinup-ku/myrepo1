@@ -1,0 +1,10 @@
+#!/bin/bash
+PATH=$PATH:/usr/local/bin
+echo -n "Enter filename? "
+read file_
+for jid in `awk '{print $NF}' ${file_}`
+do
+ echo -n `grep $jid ${file_}`
+ status_salt_jid $jid
+done
+

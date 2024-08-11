@@ -1,0 +1,5 @@
+#!/bin/ksh
+{
+date
+jldsh -eg splunk_multisite_SH "systemctl status Splunkd"|grep Active
+} >> /var/tmp/daily_check_SH_cluster.out

@@ -1,0 +1,178 @@
+#!/bin/bash
+##############################################################################
+# This script installs Splunk Universal Forwarder(UF) on AIX server.
+# AIX specific version is staged in 
+# nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk/${ver} 
+# and can be access, as root, via
+# mount nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk /mnt
+##############################################################################
+# user_ | T O S
+SPLUNK_HOME=/opt/splunkforwarder
+SPLUNK_BIN=${SPLUNK_HOME}/bin
+LOCAL_BIN=/usr/local/bin
+date_=$(date '+%F_%H%M')
+
+{
+
+usage ()
+{
+  cat<<END
+
+  Usage: $0 [ -v version_number ]
+
+  Where: -v version to upgrade
+
+END
+  exit 1
+}
+
+if [[ ! $1 ]]
+then
+  echo -n "Enter Splunk Forwarder version (ie, 7.1.2) to install? "
+  read ver
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -v ) ver=$2
+             shift
+             ;;
+      -*|* )
+             usage
+             ;;
+     esac
+     shift
+   done
+fi
+
+[[ -z ${ver} ]] && usage
+
+# Check if ${ver} in Splunk repo
+
+[[ ! -d /mnt/${ver} ]] && {
+   echo "${ver} does not exist in Splunk repo."
+   exit
+}
+
+# Check if ${ver}/splunkforwarder-${ver}*.gz exists
+cd /mnt/${ver} && {
+   splunk_uf_zip=`ls splunkforwarder-${ver}*.gz 2>/dev/null`
+   [[ -z ${splunk_uf_zip} ]] && {
+          echo "/mnt/${ver}, AIX .gz package does not exist. Abort"
+          exit 3
+   }
+}
+
+
+# Check if splunk subsystem object exists
+lssrc -a | grep splunk
+[[ "$?" = "0" ]] && {
+   #Check for /opt/splunkforwarder/splunkforwarder-${ver}*-manifest
+    [[ -f /opt/splunkforwarder/splunkforwarder-${ver}*-manifest ]] && {
+       splunk_UF_manifest=`ls /opt/splunkforwarder/splunkforwarder-${ver}*-manifest`
+       echo "Splunk manifest already exists: ${splunk_UF_manifest}. Abort"
+        exit
+    }
+}
+
+
+#echo "Mounting nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk /mnt"
+[[ ! -f /mnt/${ver}/${splunk_uf_zip} ]] && \
+mount nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk /mnt
+echo
+echo "Uncompress /mnt/${ver}/${splunk_uf_zip} to /opt"
+[[ -f /mnt/${ver}/${splunk_uf_zip} ]] && \
+ cd /opt && gunzip -c /mnt/${ver}/${splunk_uf_zip}|tar xvf -
+
+#Change UID:GID to root:system
+echo "Changing ${SPLUNK_HOME} UID:GID --> root:system"
+cd /opt && chown -R root:system splunkforwarder
+echo "Creating ${SPLUNK_HOME}/etc/system/local/user-seed.conf"
+cat <<END > ${SPLUNK_HOME}/etc/system/local/user-seed.conf
+[user_info]
+USERNAME = admin
+PASSWORD = `uname -n`
+END
+
+echo
+echo "Enable splunk@system bootup"
+${SPLUNK_BIN}/splunk start --answer-yes --no-prompt --accept-license
+${SPLUNK_BIN}/splunk enable boot-start
+echo "Add splunk to subsystem object"
+mkssys -G system -s splunkd -p /opt/splunkforwarder/bin/splunkd -u root -a _internal_exec_splunkd -S -n 2 -f 9
+
+# Verify if splunk object exists
+echo "Verify if splunk object exists and splunk entry in /etc/inittab"
+lssrc -a | grep splunk
+grep '^splunk' /etc/inittab
+echo
+
+# Creating ${LOCAL_BIN}:start_splunkforwarder, stop_splunkforwarder
+#                       show_splunkforwarder, and restart_splunkforwarder
+
+echo
+echo "Let's create ${LOCAL_BIN}/[start|stop|show|restart]_splunkforwarder"
+
+cat<<END > ${LOCAL_BIN}/start_splunkforwarder
+#!/bin/ksh
+/usr/bin/startsrc -s splunkd
+END
+
+cat<<END > ${LOCAL_BIN}/stop_splunkforwarder
+#!/bin/ksh
+/usr/bin/stopsrc -s splunkd
+END
+
+cat<<END > ${LOCAL_BIN}/show_splunkforwarder
+#!/bin/ksh
+SPLUNK_BIN=/opt/splunkforwarder/bin
+${SPLUNK_BIN}/splunk status splunkd
+END
+
+cat<<END > ${LOCAL_BIN}/restart_splunkforwarder
+#!/bin/ksh
+stop_splunkforwarder
+sleep 1
+start_splunkforwarder
+END
+
+cd ${LOCAL_BIN} && chmod +x start_splunkforwarder stop_splunkforwarder \
+                            show_splunkforwarder restart_splunkforwarder \
+
+cat<<END
+NOTE:
+
+1. To point `uname -n` to DEV/QA/PROD Splunk Deployment server, run the command below
+
+Prod:  splunkdeploymentserver.mycorp.com 
+QA:  splunkdeploymentserver-qa.dev.mycorp.com 
+Dev: splunkdeploymentserver-dev.dev.mycorp.com 
+
+For example: Set splunk forwarder to point to PROD splunkdeploymentserver.mycorp.com,
+
+${SPLUNK_BIN}/splunk set deploy-poll splunkdeploymentserver.mycorp.com:8089
+
+2. Make sure ulimit (/etc/security/limits)
+
+   set ulimit -n to 10240
+   set ulimit -d to 1073741824
+
+   ie, in /etc/security/limits:
+
+   data = 2147483648
+   nofiles = 10240
+
+
+END
+echo "Let's restart splunk forwarder"
+stopsrc -s splunkd
+sleep 3
+start_splunkforwarder
+sleep 2
+echo "Verify if splunk subsystem in SRC is in active mode"
+lssrc -a|grep splunk
+echo
+} | tee /var/tmp/`basename $0`.${date_}.OUT
+echo
+echo "OUTPUT: /var/tmp/`basename $0`.${date_}.OUT"
+cd && umount -f /mnt

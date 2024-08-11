@@ -1,0 +1,23 @@
+#!/bin/ksh
+
+stop_splunk_process ()
+{
+# Is it systemd or systemV init?
+  if [[ -f /etc/systemd/system/Splunkd.service ]]
+  then
+     systemctl stop Splunkd
+  else
+     if [[ -f /etc/init.d/splunk ]]
+     then
+        service splunk stop
+     fi
+  fi
+  # Verify
+  pgrep -u $svc_acct splunkd >/dev/null 2>&1
+  [[ "$?" = "0" ]] && pgrep -u $svc_acct splunkd | xargs kill -9
+  pgrep -u ${pre_uid} mongod >/dev/null 2>&1
+  [[ "$?" = "0" ]] && pgrep -u $svc_acct mongod | xargs kill -9
+}
+
+svc_acct=ser_act.dev
+stop_splunk_process $svc_acct

@@ -1,0 +1,67 @@
+#!/bin/bash
+################################################################################
+# Once ${SPLUNK_LOCAL}/authentiation.conf LDAP 
+# bindDN = US\svc.splunkadmdev, or 
+# bindDN = US\svc.splunkadm
+# bindDNpassword rotated and splunkd restarted, the script will validate 
+# new passwd via restAPI call instead of logging into each search head
+# https://${search_head}:8000 with user AD first.last/passwd.
+################################################################################
+# user_ | TOS Platform S P L U N K
+bold_yellow="\e[1m\e[33m"
+reset_color="\e[0m"
+echo -en "Enter your ${bold_yellow}first.last${reset_color}: "
+read user
+read -sp "Password: " key
+echo
+echo
+while [ 1 ]
+do
+   echo "Enter search head name(s) separate by comma (,), or"
+   echo -n "Full path Filename which contains list of search heads? "
+   read nodes
+   echo $nodes|grep '/' >/dev/null
+   if [[ "$?" = "0" ]]
+   then
+     # Check if file exists
+     if [[ -f ${nodes} ]]
+     then
+        nodes=`awk -F: '{print $1}' ${nodes}|grep -v '^#'|uniq`
+        nodes_=$nodes
+     else
+        echo "${nodes} doesnot exist! Abort."
+        exit 1
+     fi
+   else
+     nodes=${nodes//,/ }
+     nodes_=$nodes
+   fi
+
+   for node in ${nodes_}
+   do
+     echo -n "Validating ${node}: "
+     node_fqdn=$(host ${node}|awk '{print $1}')
+     sessionKey=$(
+     {
+       curl -k -u ${user}:${key} https://${node_fqdn}:8089/services/auth/login -d username=${user} -d password=$key
+     } 2>/dev/null | grep sessionKey)
+     echo ${sessionKey}|grep 'sessionKey' >/dev/null
+     if [[ "$?" = "0" ]]
+     then
+        echo "LDAP ${user}: AUTHENTICATED"
+     else
+        echo "LDAP ${user}: FAILED_AUTHENTICATION"
+        fi
+   done
+
+   read -p "Continue (Y|N)? " ans
+   case ${ans} in
+         Y|y )
+              continue
+              ;;
+           * )
+              echo "Good Bye"
+              exit
+              ;;
+   esac
+done

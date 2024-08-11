@@ -1,0 +1,9 @@
+#!/bin/bash
+DISK=/dev/sda
+parted -s ${DISK} mklabel gpt
+parted -s ${DISK} unit TB mkpart primary ext4 0% 100%
+partprobe
+pvcreate -f ${DISK}1
+vgcreate splunkvg ${DISK}1
+lvcreate -y -l 100%FREE -n splunkindex_lv splunkvg
+mkfs.ext4 -m 1 /dev/splunkvg/splunkindex_lv

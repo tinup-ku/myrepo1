@@ -1,0 +1,17 @@
+#!/bin/bash
+SPLUNK_HOME=$1
+OUTPUT_DIR=$2
+SAMPLES=600
+SAMPLE_PERIOD=1
+[[ ! -d ${SPLUNK_HOME}/${OUTPUT_DIR} ]] && mkdir -p ${SPLUNK_HOME}/${OUTPUT_DIR}
+ 
+count=0
+for i in $(seq 1 $SAMPLES)
+do
+  pstack 43805 > $SPLUNK_HOME/$OUTPUT_DIR/pstack_splunkd-$i-$(date +%s).out
+  sleep $SAMPLE_PERIOD
+  tot_count=`expr $count + 1`
+  echo $tot_count
+done
+
+

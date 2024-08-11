@@ -1,0 +1,3 @@
+#!/bin/bash
+sed -i '$a\\n\[default\]\ntsidxWritingLevel=2\n' ADD_to_indexes.conf
+

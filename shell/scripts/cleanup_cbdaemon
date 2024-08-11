@@ -1,0 +1,32 @@
+#!/bin/ksh
+
+# Check if cbsensor-v5.1.4.70131-1.x86_64 and cs-cbsensor-admin-prod-5.1.4-0.noarch
+
+rpm -q cbsensor >/dev/null
+
+if [[ "$?" = "0" ]]
+then
+   # Stop cbdaemon
+   service cbdaemon stop
+
+   # Disable at startup
+   chkconfig cbdaemon off
+
+   # Prevent /etc/init.d/cbdaemon from starting up
+   [[ -x /etc/init.d/cbdaemon ]] && {
+     # Rename to /etc/init.d/cbdaemon /etc/init.d/cbdaemon.ORIG
+     /bin/mv -f /etc/init.d/cbdaemon /etc/init.d/cbdaemon.ORIG
+     # Create /etc/init.d/cbdaemon directory
+     mkdir /etc/init.d/cbdaemon && /bin/mv -f /etc/init.d/cbdaemon.ORIG /etc/init.d/cbdaemon
+     chmod 400 /etc/init.d/cbdaemon
+
+     # Remove its driver
+     lsmod|grep cbsensor >/dev/null
+     [[ "$?" = "0" ]] && rmmod cbsensor
+   }
+   # Remove cs-cbsensor-admin-prod-5.1.4-0.noarch and cbsensor-v5.2.13.71018-1.x86_64
+   rpm -e cs-cbsensor-admin-prod;rpm -e cbsensor
+else
+  mkdir /etc/init.d/cbdaemon && chmod 400 /etc/init.d/cbdaemon 
+fi
+

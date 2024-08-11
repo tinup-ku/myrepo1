@@ -1,0 +1,2 @@
+#!/bin/ksh
+ps -ef|grep '[r]un_daily_strace'|awk '{print $2}'|xargs -n1 kill -9

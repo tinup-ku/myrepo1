@@ -1,0 +1,3 @@
+#!/bin/bash
+vd=`perccli /c0/vall show|grep '1.454 TB'|awk '{print $1}'|awk -F/  '{print $NF}'`
+echo "Virtual Drive for SSD: $vd"

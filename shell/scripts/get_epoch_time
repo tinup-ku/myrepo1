@@ -1,0 +1,38 @@
+#!/bin/bash
+
+echo -n "Enter date in MM/DD/YYYY (for example, 10/12/2019)? "
+read yyyymmdd
+echo
+
+echo -n "How many output files (1|2|4|6|8|12|24)? "
+read number
+remainder=`expr 24 % ${number}`
+if [[ "${remainder}" != "0" ]]
+then
+     echo "The number, $number, is invalid. Try again."
+     exit
+fi
+
+case ${number} in
+     1|2|3|4|6|8|12|24 )
+         first_num=`expr 24 / $number`
+         last_num=`expr 24 - $first_num`
+         start_one=`date --date="${yyyymmdd} 00:00:00" +"%s"`
+         previous=$start_one
+         for num in `seq $first_num $first_num $last_num`
+         do
+           next=`date --date="${yyyymmdd} $num:00:00" +"%s"`
+           echo "${previous},${next}"
+           previous=$next
+         done  
+         last=`date --date="${yyyymmdd} 23:59:59" +"%s"`
+         # Add 1 to make it top of the hour.
+         last=`expr $last + 1`
+         echo "${previous},${last}"
+         ;;
+     * )
+         echo "Wrong choice. Try again."
+         exit
+         ;;
+esac
+

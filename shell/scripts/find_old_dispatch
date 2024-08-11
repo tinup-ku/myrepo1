@@ -1,0 +1,8 @@
+#!/bin/ksh
+cd /opt/splunk/var/run/splunk/dispatch && {
+echo -n "Older than 1 week: "
+find .  -type d -mtime +7 -exec ls -ld {} + 2>/dev/null |wc -l
+
+#echo -n "File/dir with cancel: "
+#find . -type f -exec grep -il cancel {} +|awk -F/ '{print $2}' 2>/dev/null|wc -l
+}

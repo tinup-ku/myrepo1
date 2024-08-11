@@ -1,0 +1,11 @@
+#!/bin/ksh
+
+echo -n "Enter Interval? "
+read interval
+end=`expr 24 - $interval`
+
+echo
+for num in `seq 3 $interval $end`
+do
+  echo $num
+done

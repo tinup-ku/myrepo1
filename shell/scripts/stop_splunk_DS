@@ -1,0 +1,35 @@
+#!/bin/bash
+
+Splunkd_service=/etc/systemd/system/Splunkd.service
+
+# Is Splunk running as a service account or root/splunk?
+cd /opt/splunk  && {
+  _uid=`ls -ld etc|awk '{print $3}'`
+  _gid=`ls -ld etc|awk '{print $4}'`
+  }
+
+#echo "uid:gid --> $_uid:$_gid"
+
+
+stop_splunk_process ()
+{
+  if [[ -f ${Splunkd_service} ]]
+  then
+     systemctl stop Splunkd
+     systemctl daemon-reload
+  else
+     echo "${Splunkd_service} DOES NOT exist."
+  fi
+  # Verify and force a kill
+  pgrep -u ${pre_uid} splunkd >/dev/null 2>&1
+  [[ "$?" = "0" ]] && {
+     echo -n "Clean up splunk processes..."
+     pgrep -u ${pre_uid} splunkd | xargs kill -9
+     echo "Done"
+  }
+  pgrep -u ${pre_uid} mongod >/dev/null 2>&1
+  [[ "$?" = "0" ]] && pgrep -u ${pre_uid} mongod | xargs kill -9
+}
+
+echo "`date`: Stopping Splunkd.service"
+stop_splunk_process

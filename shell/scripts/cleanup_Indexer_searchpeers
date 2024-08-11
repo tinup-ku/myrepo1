@@ -1,0 +1,26 @@
+#!/bin/bash
+#########################################################################
+# This is to clean up ${indexer}:${SPLUNK_HOME}/var/run/searchpeers
+# Below are Search Head Cluster id defined in ${SPLUNK_LOCAL}/server.conf
+# They need to be excluded from cleaning up
+# ES: id = 05A5FCD7-CDD9-43B2-B191-5888A45A901C
+# ITSI id = 06337FC8-04CB-40F5-9848-1EF2E8AA5EFC
+# Core: id = 81FBC65F-DFC1-4FC5-B9D9-8AF85D1404C2
+# Pre-PROD: id = 011BDB1C-D6EB-483E-99BC-07E753C03F9E
+# RestAPI: id = D228A813-E6A3-4B7C-903A-AAE96D7B367C
+#########################################################################
+SPLUNK_HOME=/opt/splunk
+ES='05A5FCD7-CDD9-43B2-B191-5888A45A901C'
+ITSI='06337FC8-04CB-40F5-9848-1EF2E8AA5EFC'
+Core='81FBC65F-DFC1-4FC5-B9D9-8AF85D1404C2'
+PP='011BDB1C-D6EB-483E-99BC-07E753C03F9E'
+RestAPI='D228A813-E6A3-4B7C-903A-AAE96D7B367C'
+
+cd ${SPLUNK_HOME}/var/run/searchpeers && {
+   # Generate a list to clean up
+   echo "$(uname -n):${SPLUNK_HOME}/var/run/searchpeers"
+   echo "Cleaning up old Splunk artifacts > 5 days"
+   echo "OUTPUT: /tmp/`uname -n`_searchpeers.list"
+   find .  -maxdepth 1 -mtime +5 -exec ls -ld {} + > /tmp/`uname -n`_searchpeers.list
+   find .  -maxdepth 1 -mtime +5 -exec rm -rf {} +
+}

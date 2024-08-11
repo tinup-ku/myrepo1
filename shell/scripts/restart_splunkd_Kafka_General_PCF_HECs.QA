@@ -1,0 +1,97 @@
+#!/bin/bash
+# Restart both Enterprise PCF ang General @6PM EST Monday
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+users_list="user1@mycorp.com,user2@mycorp.com,user4@mycorp.com,user3@mycorp.com,SivaKumar.Nakka@mycorp.com"
+PCF_HECs="cud1-008660
+cud1-008661
+cud1-008894
+cud1-008895
+cud1-012811
+cud1-012812
+cud1-012813
+cud1-012814
+cud1-012815
+cud1-012816
+cud2-009194
+cud2-009195
+cud2-009196
+cud2-009197
+cud2-009198
+cud2-009199
+cud2-009200
+cud2-009201
+cud2-009202
+cud2-009203"
+
+
+General_HECs="cud1-012821
+cud1-012822
+cud1-012823
+cud1-012824
+cud1-012825
+cud1-012826
+cud1-012827
+cud2-009204
+cud2-009205
+cud2-009206
+cud2-009207
+cud2-009208
+cud2-009209
+cud2-009210"
+
+
+
+{
+date
+echo "--------------------------------------------------------------------"
+echo "1. Restarting All_QA_Enterprise_Kafka_PCF_Logs_cluster_HEC splunkd"
+echo "--------------------------------------------------------------------"
+echo "########"
+echo "BEFORE:"
+echo "########"
+echo '                             total       used       free       shared      buff/cache   available'
+jldsh -ec $CLUSTER -eg All_QA_Enterprise_Kafka_PCF_Logs_cluster_HEC "free -h|grep ^Mem"
+echo
+echo "Restarting splunkd on HEC's All_QA_Enterprise_Kafka_PCF_Logs_cluster_HEC"
+for hec in ${PCF_HECs}
+do
+  jldsh -ew $hec "systemctl restart Splunkd;sleep 10;pgrep splunkd|wc -l"
+done
+echo
+date
+echo "########"
+echo "AFTER:"
+echo "########"
+echo '                             total       used       free       shared      buff/cache   available'
+jldsh -ec $CLUSTER -eg All_QA_Enterprise_Kafka_PCF_Logs_cluster_HEC "free -h|grep ^Mem"
+echo
+date
+echo
+echo "---------------------------------------------------------------------------------------"
+echo "2. Restarting ITRS HECs All_Confluent_Enterprise_General_Kafka_Connect_QA_HEC"
+echo "---------------------------------------------------------------------------------------"
+echo "########"
+echo "BEFORE:"
+echo "########"
+echo '                          total         used       free       shared   buff/cache   available'
+jldsh -ec $CLUSTER -eg All_Confluent_Enterprise_General_Kafka_Connect_QA_HEC "free -h|grep ^Mem"
+echo
+echo "Restarting splunkd on HEC's All_Confluent_Enterprise_General_Kafka_Connect_QA_HEC"
+for hec in ${General_HECs}
+do
+  jldsh -ew $hec "systemctl restart Splunkd;sleep 10;pgrep splunkd|wc -l"
+  sleep 10
+done
+echo
+date
+echo "########"
+echo "AFTER:"
+echo "########"
+echo '                          total         used       free       shared   buff/cache   available'
+jldsh -ec $CLUSTER -eg All_Confluent_Enterprise_General_Kafka_Connect_QA_HEC "free -h|grep ^Mem"
+echo
+date
+echo
+
+
+} | tee /var/tmp/`basename $0`.LOG|mailx -s "Final TG4 Preparation | QA Enterprise PCF + General HECs splunkd restart LOG " ${users_list}

@@ -1,0 +1,8 @@
+#!/bin/bash
+{
+  ip_list=`netstat -an|grep ':9990'|grep ESTABLISH|awk '{print $5}'|awk -F: '{print $1}'`
+  for ip in ${ip_list}
+  do
+    host $ip
+  done
+} >> /tmp/splunkUF_1.out

@@ -1,0 +1,30 @@
+#!/bin/ksh
+SPLUNK_BIN=/opt/splunk/bin
+env_=`uname -n|grep -o '...$'`
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+case ${env_} in
+   pdv | bdv ) uid=svc_act2
+               gid=unx_60231_splunk_admin_dev
+               key=${dev}
+               ;;
+   some_loc | loc2 ) uid=svc_act1
+               gid=unx_9998_access
+               key=${prod}
+               ;;
+esac
+clear
+echo
+echo "###### Splunk Multisite Index Cluster Status ######"
+echo
+if [[ "$1" = "-v" ]]
+then
+    su - ${uid} -c "${SPLUNK_BIN}/splunk show cluster-status --verbose -auth admin:${key}"
+else
+    su - ${uid} -c "${SPLUNK_BIN}/splunk show cluster-status --verbose -auth admin:${key}"|grep -A8 'Pre-flight check successful'
+    echo "###################################################"
+    echo
+fi
+

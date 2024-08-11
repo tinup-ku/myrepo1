@@ -1,0 +1,84 @@
+#!/bin/bash
+date_=$(date '+%a%H%M_%m%d%Y')
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+
+echo -en "Is it [${bold_yellow}D${reset_color}]EV, [${bold_yellow}Q${reset_color}]A, or [${bold_yellow}P${reset_color}]ROD? "
+read env_
+case ${env_} in
+        D|d )
+              LUMP=All_PDC13_DEV_SH
+              env__=DEV
+              ;;
+        Q|q )
+              LUMP=All_QA_SH_cluster
+              env__=QA
+              ;;
+        P|p )
+              LUMP=All_splunk_CORE_multisite_SH
+              env__=PROD
+              ;;
+          * )
+              echo -en "Enter ${bold_yellow}D|d${reset_color}, ${bold_yellow}Q|q${reset_color}, or ${bold_yellow}P|p${reset_color}. Try again."
+              echo
+              exit
+              ;;
+esac
+
+echo -n "Generating a list of All AD users, please wait...."
+/opt/quest/bin/vastool -u host/ list -al users | tr "[A-Z]" "[a-z]" > /tmp/ad.users.${date_} 
+#
+# Before deleting users. Perform Task Below on SH
+#[root@s3144some_loc apps]# grep -ir aaron.rinn * | grep -c  ".meta:owner"
+#0
+#[root@s3144some_loc apps]# grep -ir user2 * | grep -c  ".meta:owner"
+#274
+
+# NOTE:
+# If result = 0, proceed to delete
+# Otherwise, ignore.
+#
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+SPLUNK_APPS=/opt/splunk/etc/apps
+SPLUNK_USERS=/opt/splunk/etc/users
+# Get a list of users from SH
+echo "${env__}: ${LUMP}, identify SH which has highest users counts"
+SH=$(jldsh -ec $CLUSTER -eg ${LUMP} "cd ${SPLUNK_USERS};ls|wc -l"|sort -k2|tail -1|awk -F: '{print $1}')
+echo
+echo "Found SH, ${SH}"
+# Get a list of users on identified ${SH}
+echo "Generating users list on ${SH}"
+if [[ -n ${SH} ]]
+then
+  ssh -q ${SH} "cd ${SPLUNK_USERS};ls" > /var/tmp/${SH}_splunk_${env__}.users
+  
+  echo "OUTPUT: /var/tmp/${SH}_splunk_${env__}.users (users counts: `wc -l /var/tmp/${SH}_splunk_${env__}.users`)"
+else
+  echo "${SH} NOT_IDENTIFIED. Abort"
+  exit
+fi
+
+echo -n "${env__}, Generating a list of users no longer with mycorp. Please wait..."
+{
+  for user in `cat /var/tmp/${SH}_splunk_${env__}.users`
+  do
+     grep ${user} /tmp/ad.users.${date_}  >/dev/null
+     [[ "$?" != "0" ]] && echo "${user}"
+  done
+} >> /var/tmp/users_NO_LONGER_at_mycorp_${env__}.list.${date_}
+echo
+echo "OUTPUT: /var/tmp/users_NO_LONGER_at_mycorp_${env__}.list.${date_} (users counts: `wc -l /var/tmp/users_NO_LONGER_at_mycorp_${env__}.list.${date_}`)"
+echo
+echo "${env__}, Validating /var/tmp/users_NO_LONGER_at_mycorp_${env__}.list.${date_}"
+
+{
+for user_ in `cat /var/tmp/users_NO_LONGER_at_mycorp_${env__}.list.${date_}`
+do
+   user_count=$(ssh -q ${SH} "cd ${SPLUNK_APPS} && find . -type f -exec grep -i ${user_} {} + |grep -c '.meta:owner'")
+   [[ ${user_count} -eq 0 ]] && echo "${user_} OK_TO_DELETE"
+done
+} | tee /var/tmp/users_OK_TO_DELETE_${env__}.list.${date_}
+echo "OUTPUT: /var/tmp/users_OK_TO_DELETE_${env__}.list.${date_}"

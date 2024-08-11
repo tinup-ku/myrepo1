@@ -1,0 +1,36 @@
+#!/bin/bash
+# nice -n 19 echo ./run_iostat|at now
+date_=$(date '+%F_%H%M')
+OUTPUT=/var/tmp/IOSTAT/iostat.${date_}
+# 2GB=2147483648 bytes
+SIZE_IN_BYTES=2147483648
+user_list="user1@mycorp.com,user2@mycorp.com,user3@mycorp.com"
+
+echo "OUTPUT=$OUTPUT"
+
+[[ ! -d /var/tmp/IOSTAT ]] && mkdir -p /var/tmp/IOSTAT
+
+# Every 3 seconds with 4800 counts ( 4 hrs)
+nohup iostat -dxt -p sda -p sdb -p sdc 2 4800 >> ${OUTPUT} &
+job_pid=$!
+echo "${job_pid}"  > /var/tmp/run_iostat.PID
+echo "Background process id for the job: /var/tmp/run_iostat.PID: ${job_pid}"
+
+while [ 1 ]
+do
+  iostat_size=$(du -b ${OUTPUT}|awk '{print $1}')
+  [[ ${iostat_size} -gt ${SIZE_IN_BYTES} ]] && {
+    kill -9 $job_pid
+    echo "Abort due to ${OUTPUT} size ${iostat_size} bytes > ${SIZE_IN_BYTES} bytes"
+    mailx -s "`uname -n`: run_iostat PID:$job_pid aborted due to ${OUTPUT} size: $iostat_size > ${SIZE_IN_BYTES} bytes (EOM)" ${user_list} < /dev/null
+    exit
+  }
+  sleep 5s
+  lsof -p ${job_pid} >/dev/null
+  [[ "$?" != "0" ]] && {
+     mailx -s  "$(uname -n):`basename $0`: JobID ${job_pid} died (EOM)" user1@mycorp.com < /dev/null
+     exit
+  }
+done
+
+

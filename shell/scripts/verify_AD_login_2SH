@@ -1,0 +1,30 @@
+#!/bin/ksh
+
+get_hostname ()
+{
+#  {
+#    eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+#  } 2>/dev/null
+
+  # DEV/QA or PROD?
+  . /.key
+  echo ${F5_fqdn}|grep 'dev' >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+    key=${dev}
+  else
+    key=${prod}
+  fi
+
+ {
+  curl -k -u admin:${key} https://${F5_fqdn}:8089/services/server/info 2>/dev/null
+ } |grep "host_fqdn" | awk -F'>' '{print $2}'|sed 's/<\/s:key//g'
+}
+
+for F5_fqdn in splunk-extracts.mycorp.com
+do
+ echo -n "${F5_fqdn}: "
+ get_hostname 2>/dev/null
+done
+AD_pass=M@ttis19!
+curl -k -u user1:${AD_pass} https://splunk-restapi-qa.dev.mycorp.com:8089/services/auth/login -d username=user1 -d password=${AD_pass}

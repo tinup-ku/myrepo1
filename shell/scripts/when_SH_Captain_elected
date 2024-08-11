@@ -1,0 +1,31 @@
+#!/bin/ksh
+get_key ()
+{
+  . /.key
+  echo ${F5_fqdn}|grep 'dev' >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+    key=${dev}
+  else
+    key=${prod}
+  fi
+}
+
+
+#F5_fqdn=splunk-restapi.mycorp.com
+#F5_fqdn=splunk-restapi-qa.dev.mycorp.com
+#F5_fqdn=splunk-qa.dev.mycorp.com
+F5_fqdn=splunk-admin.mycorp.com
+F5_fqdn=splunk-preprod.mycorp.com
+echo -n "Enter SH cluster F5 (ie, splunk-admin.mycorp.com)? "
+read F5_fqdn
+get_key 2>/dev/null
+captain=`curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+echo "${F5_fqdn} captain --> $captain"
+echo -n "${F5_fqdn} $captain was elected on "
+{
+  curl -ku admin:${key} https://${F5_fqdn}:8089/services/shcluster/status?advanced=1?|grep elected_captain|awk -F'>' '{print $2}'|awk -F'<' '{print $1}'
+} 2>/dev/null
+
+#svc.DSPU_splunk_dev
+#Big-yiarv7ugryick

@@ -1,0 +1,75 @@
+#!/bin/ksh
+###############################################################################
+# This script sets up trust relationship between source and destination
+# Splunk indexers or from the Control server to its Indexers + SH within its
+# environment.
+# NOTE:
+# Once script ran, go to the Control server or source Indexer and run
+# `ssh -o "StrictHostKeyChecking no" ${node} "uptime" 2>/dev/null`
+###############################################################################
+# user_ | TOS Plaform Splunk
+
+if [[ ! $1 ]]
+then
+   echo -n "Enter Splunk Control server name? "
+   read source
+   echo -n "Enter destination Indexer(s) with comma separated? "
+   read dest
+else
+   source=$1
+   dest=$2
+fi
+
+# Now copy jldsh jlpcp dshbak to source(s)'s /usr/local/bin
+# Comment out next 2 lines due to jldsh/jlpcp is diffrent between ser100013some_loc/loc2 and ser15000some_loc/loc2. 11/26/2019
+#echo "Copy jldsh to $source:/usr/local/bin"
+#cd /usr/local/bin && scp -p jldsh jlpcp dshbak $source:/usr/local/bin 2>/dev/null
+
+# Strip out comma
+dest=${dest//,/ }
+
+
+# Check source's /root/.ssh/id_rsa.pub
+cat << END | ssh $source 2>/dev/null
+ if [[ ! -f /root/.ssh/id_rsa.pub ]]
+ then
+   echo "Creating $source root key via ssh-keygen -f /root/.ssh/id_rsa -P \"\" -C \"\" -q"
+   ssh-keygen -f /root/.ssh/id_rsa -P "" -C "" -q
+ else
+   echo "$source:/root/.ssh/id_rsa.pub exists. Goto next step."
+ fi
+END
+
+source_key=`ssh $source "awk '{print \\$NF}' /root/.ssh/id_rsa.pub" 2>/dev/null` 
+
+for node in $dest
+do
+  # Check if root's key already deployed.
+  dest_key=`ssh $node "grep \"$source_key\" /ssh-keys/root" 2>/dev/null |awk '{print $NF}'`
+  if [[ "$source_key" != "$dest_key" ]]
+  then
+     # Copy id_rsa.pub from source to destination(s)
+     echo "Copying $source:/root/.ssh/id_rsa to $node"
+     ssh $source "cd /root/.ssh;find id_rsa.pub|cpio -oBc" 2>/dev/null | \
+     ssh $node "cd /var/tmp;cpio -iBc" 2>/dev/null
+
+     # Copy source's id_rsa.pub to destination(s)
+     echo "Update $node:/ssh-keys/root with $source:/root/.ssh/id_rsa"
+     jldsh -ew $node "cd /ssh-keys && /bin/cp -f root root.ORIG"
+     cat<<END_ |ssh $node 2>/dev/null
+      {
+       cat /ssh-keys/root
+       cat /var/tmp/id_rsa.pub
+      } > /var/tmp/${node}.$$
+      /bin/mv -f /var/tmp/${node}.$$ /ssh-keys/root
+      /bin/rm -f /var/tmp/id_rsa.pub
+END_
+
+     # Running ssh -o "StrictHostKeyChecking no" ${node} "uptime" 2>/dev/null` from
+     # ${source} to each ${dest}
+     jldsh -ew $source "ssh -o 'StrictHostKeyChecking no' ${node} \"uptime\" 2>/dev/null" 
+  else
+     echo "$node:/ssh-keys/root is already setup."
+  fi
+done
+

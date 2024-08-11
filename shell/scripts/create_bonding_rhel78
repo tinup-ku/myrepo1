@@ -1,0 +1,275 @@
+#!/bin/bash
+# /create_bonding_rhel7 cs0 eth3
+date_=$(date '+%a%H%M_%m%d%Y')
+IP_MASK=`ip addr |sed -e '/idrac/,$ d'| awk '$1 == "inet" && $2 !~/127.0.0.1/ {print $2}'`
+
+{
+
+[[ -L /sys/class/net/Team0 ]] && {
+  echo "Teamming is already configured on this node."
+  echo
+  ls /sys/class/net
+  echo
+  nmcli con sho|egrep "NAME|Team"
+  exit
+}
+
+active_ports=""
+echo "Here are link detected ports:"
+for eth in `ip link | awk '$2 != "idrac:" && $8 == "state" && $9 == "UP" { gsub(":",""); print $2}'`
+do
+ ans=`ethtool $eth |awk -F: '/Link detected/{print $NF}'|sed 's/ //g'`
+ [[ "${ans}" = "yes" ]] && active_ports="$active_ports $eth"
+done
+
+# If < 1 active, stop.
+
+[[ "`echo $active_ports|wc -w`" != "2" ]] && {
+  echo "Bonding/Teaming will require 2 active ports. I'm seeing: " 
+  echo "$active_ports"
+  exit
+}
+
+echo ">>> Creating bonding interface: $active_ports"
+
+
+SGW=`ip route show | awk '/^default/{print $3}'`
+echo "setting IP/MASK address as $IP_MASK and GW as $SGW"
+echo
+
+# 1.
+echo "1. Creating /etc/sysconfig/network-scripts/ifcfg-Team0"
+echo "Mode: active-backup"
+
+cat<<END
+
+nmcli con add type team con-name Team0 ifname Team0 config '{ "runner": {"name": "activebackup"}}'
+
+END
+nmcli con add type team con-name Team0 ifname Team0 config '{ "runner": {"name": "activebackup"}}'
+
+# 2.
+echo "2. Configure Team0 with $IP_MASK and $SGW"
+echo "nmcli con mod Team0 ipv4.addresses $IP_MASK ipv4.gateway $SGW"
+nmcli con mod Team0 ipv4.addresses $IP_MASK ipv4.gateway $SGW
+echo "nmcli con mod Team0 ipv4.method manual"
+nmcli con mod Team0 ipv4.method manual
+
+# 3. Configure Teaming based on active ${ports}
+echo "3. Configure Teaming ports: $active_ports"
+echo
+for port in $active_ports
+do 
+  echo "Creating /etc/sysconfig/network-scripts/Team0-${port}"
+  echo "nmcli con add type team-slave con-name Team0-${port} ifname ${port} master Team0"
+  nmcli con add type team-slave con-name Team0-${port} ifname ${port} master Team0
+  echo "Activating Team0-${port}"
+  echo "nmcli con up Team0-${port}"
+  nmcli con up Team0-${port}
+  echo
+done
+
+sleep 3
+# 4. Activating Team0
+echo "4. Activating Team0 via \`nmcli con up Team0\`"
+nmcli con up Team0
+
+echo
+echo "Current $active_ports status:"
+teamdctl Team0 state -v
+#nmcli con show
+exit
+#########################################
+# Testing failover/failback $active_ports
+#########################################
+# BEGIN TESTING
+# Primary port: cs0
+# Standby port: eth3 OR em2
+# ------------
+# I. Failover: (active port: eth3)
+# ------------
+# 1. nmcli con down Team0-cs0
+# Output:
+# Connection 'Team0-cs0' successfully deactivated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/10)
+#
+# Verify:
+#
+# 2. [root@s3626loc2 ~]# teamdctl Team0 state -v
+# setup:
+#   runner: activebackup
+#   kernel team mode: activebackup
+#   D-BUS enabled: yes
+#   ZeroMQ enabled: no
+#   debug level: 0
+#   daemonized: no
+#   PID: 115392
+#   PID file: /var/run/teamd/Team0.pid
+# ports:
+#   eth3
+#     ifindex: 5
+#     addr: e4:43:4b:44:c5:54
+#     ethtool link: 10000mbit/fullduplex/up
+#     link watches:
+#       link summary: up
+#       instance[link_watch_0]:
+#         name: ethtool
+#         link: up
+#         down count: 0
+#         link up delay: 0
+#         link down delay: 0
+# runner:
+#   active port: eth3
+#
+# 3. Now, bring up Team0-cs0
+# [root@s3626loc2 ~]# nmcli con up Team0-cs0
+# Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/12)
+#
+# Verify:
+#
+# 4. [root@s3626loc2 ~]# teamdctl Team0 state -v
+# setup:
+#   runner: activebackup
+#   kernel team mode: activebackup
+#   D-BUS enabled: yes
+#   ZeroMQ enabled: no
+#   debug level: 0
+#   daemonized: no
+#   PID: 115392
+#   PID file: /var/run/teamd/Team0.pid
+# ports:
+#   cs0
+#     ifindex: 4
+#     addr: e4:43:4b:44:c5:54
+#     ethtool link: 10000mbit/fullduplex/up
+#     link watches:
+#       link summary: up
+#       instance[link_watch_0]:
+#         name: ethtool
+#         link: up
+#         down count: 0
+#         link up delay: 0
+#         link down delay: 0
+#   eth3
+#     ifindex: 5
+#     addr: e4:43:4b:44:c5:54
+#     ethtool link: 10000mbit/fullduplex/up
+#     link watches:
+#       link summary: up
+#       instance[link_watch_0]:
+#         name: ethtool
+#         link: up
+#         down count: 0
+#         link up delay: 0
+#         link down delay: 0
+# runner:
+#   active port: eth3
+#
+# -------------
+# II. Failback: (active port: cs0)
+# -------------
+# 1. [root@s3626loc2 ~]# nmcli con down Team0-eth3
+# Connection 'Team0-eth3' successfully deactivated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/8)
+#
+#
+# Verify:
+#
+# 2. [root@s3626loc2 ~]# teamdctl Team0 state -v
+# setup:
+#   runner: activebackup
+#   kernel team mode: activebackup
+#   D-BUS enabled: yes
+#   ZeroMQ enabled: no
+#   debug level: 0
+#   daemonized: no
+#   PID: 115392
+#   PID file: /var/run/teamd/Team0.pid
+# ports:
+#   cs0
+#     ifindex: 4
+#     addr: e4:43:4b:44:c5:54
+#     ethtool link: 10000mbit/fullduplex/up
+#     link watches:
+#       link summary: up
+#       instance[link_watch_0]:
+#         name: ethtool
+#         link: up
+#         down count: 0
+#         link up delay: 0
+#         link down delay: 0
+# runner:
+#   active port: cs0
+#
+# 3. Now, bring up Team0-eth3
+# [root@s3626loc2 ~]# nmcli con up Team0-eth3
+# Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/13)
+#
+# Verify:
+# 
+# 4. [root@s3626loc2 ~]# teamdctl Team0 state -v
+# setup:
+#   runner: activebackup
+#   kernel team mode: activebackup
+#   D-BUS enabled: yes
+#   ZeroMQ enabled: no
+#   debug level: 0
+#   daemonized: no
+#   PID: 115392
+#   PID file: /var/run/teamd/Team0.pid
+# ports:
+#   cs0
+#     ifindex: 4
+#     addr: e4:43:4b:44:c5:54
+#     ethtool link: 10000mbit/fullduplex/up
+#     link watches:
+#       link summary: up
+#       instance[link_watch_0]:
+#         name: ethtool
+#         link: up
+#         down count: 0
+#         link up delay: 0
+#         link down delay: 0
+#   eth3
+#     ifindex: 5
+#     addr: e4:43:4b:44:c5:54
+#     ethtool link: 10000mbit/fullduplex/up
+#     link watches:
+#       link summary: up
+#       instance[link_watch_0]:
+#         name: ethtool
+#         link: up
+#         down count: 0
+#         link up delay: 0
+#         link down delay: 0
+# runner:
+#   active port: cs0
+##############
+# END TESTING
+##############
+# nmcli con up Team0-eth2
+# To remove a port
+# teamdctl team0 port remove eth2
+# RESULT:
+# NAME        UUID                                  TYPE      DEVICE
+# Team0       bab8d70c-3ae2-4fc0-b2ec-966e48363816  team      Team0
+# Team0-cs0   3edbca8b-e243-4cb3-928f-790d7aa49186  ethernet  cs0
+# Team0-eth3  acb5f2e7-9f65-432e-bf5c-b257688048f3  ethernet  eth3
+} | tee ./`basename $0`.${date_}.OUT
+echo
+echo "OUTPUT: ./`basename $0`.${date_}.OUT"
+echo
+exit
+# [root@s3141some_loc ~]# nmcli c s
+#NAME        UUID                                  TYPE      DEVICE
+#Team0       c7013acc-83f4-4f7f-96e9-346fe2c8cf60  team      Team0
+#Team0-cs0   7420aef3-2ded-4701-980b-b13fa2218bd5  ethernet  cs0
+#Team0-eth3  3f9af34d-925a-4509-908e-82b07dd78cbd  ethernet  eth3
+#cs0         e3cfff92-678a-4bd4-9365-f0197d53c656  ethernet  --
+#eth0        4f19cb89-13a5-4b83-a9fd-d8b714807604  ethernet  --
+#eth1        e1fbf52e-a2df-4f7d-9b15-1bd6982e1580  ethernet  --
+#eth3        9e8319c1-b778-4324-bfbb-928a4ac23c2b  ethernet  --
+#idrac       da31e52f-f9b6-4417-9072-55f838fe98fc  ethernet  --
+#[root@s3141some_loc ~]# udevadm info /sys/class/net/eth3 | grep ID_NET_NAME
+#E: ID_NET_NAME_MAC=enxe4434b2e3ac9
+#E: ID_NET_NAME_ONBOARD=eno4
+#E: ID_NET_NAME_PATH=enp1s0f1
+

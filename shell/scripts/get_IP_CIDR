@@ -1,0 +1,52 @@
+#!/bin/ksh
+while [ 1 ]
+do
+if [[ ! $1 ]]
+then
+  echo "Enter hostname, or"
+  echo -n "Filename and its location which contains hostnames? "
+  read dest
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -a ) dest=$2
+             shift
+             ;;
+        -f ) dest=$2
+             shift
+             ;;
+      -*|* )
+             usage
+             ;;
+     esac
+     shift
+   done
+fi
+
+# Is it a hostname or filename?
+echo ${dest}|grep '/' >/dev/null
+if [[ "$?" = "0" ]]
+then
+  # Check if file exists
+  if [[ -f ${dest} ]]
+  then
+     dest=`cat ${dest}`
+  else
+     echo "${dest} doesnot exist!"
+     exit 1
+  fi
+else
+  dest=$dest
+fi
+
+{
+for node in $dest
+do
+   ip_mask=`jldsh -ew $node -s ./get_IP_mask|awk '{print $NF}'`
+   #echo "$node ip_mask=$ip_mask"
+   IP_CIDR=`ssh -q s1051loc4 "ipcalc $ip_mask|grep Network"`
+   echo $IP_CIDR
+done
+} | sort|uniq
+done

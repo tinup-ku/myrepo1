@@ -1,0 +1,11 @@
+#!/bin/ksh
+cd /opt/splunk/etc/auth/splunkweb 2>/dev/null&& {
+   ls|grep CA >/dev/null 2>&1
+   if [[ "$?" = "0" ]]
+   then
+      CA_cert=`ls|grep CA|egrep -v 'key|bak'`
+      openssl x509 -in ${CA_cert} -noout -dates|grep 'notAfter'
+   else
+      echo "Venafi cert is yet to install"
+   fi
+}

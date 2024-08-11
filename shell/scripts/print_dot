@@ -1,0 +1,18 @@
+#!/bin/bash
+bold_yellow="\e[1m\e[33m"
+reset_color="\e[0m"
+sec=30
+echo -n "Please wait for 10 seconds "
+for sec in {1..10}
+do
+ echo -en "${bold_yellow}.${reset_color}"
+ sleep 1
+done
+echo
+
+for sec in {1..20}
+do
+ echo -en "$(tput setaf 1)${sec}\r"
+ sleep 1
+done
+echo

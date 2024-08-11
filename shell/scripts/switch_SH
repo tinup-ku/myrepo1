@@ -1,0 +1,109 @@
+#!/bin/bash
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+Legacy_CM='https://splunkmasternode.mycorp.com:8089'
+DC4_CM='https://splunkmasternode-loc5.mycorp.com:8089'
+CD1_A_CM='https://ser27-005833.us.global.mycorp.com:8089'
+CD1_B_CM='https://ser24-010638.us.global.mycorp.com:8089'
+CD1_C_CM='https://ser27-005850.us.global.mycorp.com:8089'
+bold_yellow="\e[1m\e[33m"
+light_yellow="\e[1m\e[93m"
+magenta="\e[1m\e[35m"
+light_green="\e[1m\e[92m"
+green=$(tput setaf 2)
+blue="\e[1m\e[34m"
+cyan="\e[1m\e[36m"
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+
+
+
+show_CM ()
+{
+
+echo "---------------------------------------------------------------------------------"
+echo -e "\t${bold_yellow}1${reset_color}. Legacy Cluster Master --> ${cyan}${Legacy_CM}${reset_color}"
+echo -e "\t${bold_yellow}2${reset_color}. DC4 Cluster Master --> ${cyan}${DC4_CM}${reset_color}"
+echo -e "\t${bold_yellow}3${reset_color}. CD1_A Cluster Master --> ${cyan}${CD1_A_CM}${reset_color}"
+echo -e "\t${bold_yellow}4${reset_color}. CD1_B Cluster Master --> ${cyan}${CD1_B_CM}${reset_color}"
+echo -e "\t${bold_yellow}5${reset_color}. CD1_C Cluster Master --> ${cyan}${CD1_C_CM}${reset_color}"
+#echo -e "\t${bold_yellow}6${reset_color}. CD1_D Cluster Master --> ${cyan}${CD1_D_CM}${reset_color}"
+echo -e "\t${bold_yellow}Q|q${reset_color}. Quit/Exit"
+echo "---------------------------------------------------------------------------------"
+
+}
+
+
+get_current_server_setting ()
+{
+  cd ${SPLUNK_LOCAL} && \
+     grep -A1 '\[clustering' server.conf|awk '{print $NF}'|tail -1
+}
+
+current_=`get_current_server_setting`
+echo
+case ${current_} in
+     ${Legacy_CM} )
+                    echo -e "Current SH's pointing to ${cyan}Legacy${reset_color} CM --> ${cyan}${Legacy_CM}${reset_color}"
+                    ;;
+     ${DC4_CM}    )
+                    echo -e "Current SH's pointing to ${cyan}DC4-cluster${reset_color} CM --> ${cyan}${DC4_CM}${reset_color}"
+                    ;;
+     ${CD1_A_CM}  )
+                    echo -e "Current SH's pointing to ${cyan}CD1_A${reset_color} CM --> ${cyan}${CD1_A_CM}${reset_color}"
+                    ;;
+     ${CD1_B_CM}  )
+                    echo -e "Current SH's pointing to ${cyan}CD1_B${reset_color} CM --> ${cyan}${CD1_B_CM}${reset_color}"
+                    ;;
+     ${CD1_C_CM}  )
+                    echo -e "Current SH's pointing to ${cyan}CD1_C${reset_color} CM --> ${cyan}${CD1_C_CM}${reset_color}"
+                    ;;
+esac
+
+
+show_CM
+echo -en "Enter ${bold_yellow}numeric${reset_color} value represents Cluster Master to Search? "
+read num_
+case $num_ in
+              1 )
+                  m_indexer="Legacy"
+                  cd ${SPLUNK_LOCAL} && [[ -f server.conf.Legacy ]] && cp -f server.conf.Legacy server.conf || echo "server.conf.Legacy DOESNOT exit. Abort"
+                  ;;
+              2 )
+                  m_indexer="DC4"
+                  cd ${SPLUNK_LOCAL} && [[ -f server.conf.DC4-cluster ]] && cp -f server.conf.DC4-cluster server.conf || echo "server.conf.DC4-cluster DOESNOT exit. Abort"
+                  ;;
+              3 )
+                  m_indexer="CD1_A"
+                  cd ${SPLUNK_LOCAL} && [[ -f server.conf.CD1_A ]] && cp -f server.conf.CD1_A server.conf || echo "server.conf.CD1_A DOESNOT exit. Abort"
+                  ;;
+              4 )
+                  m_indexer="CD1_B"
+                  cd ${SPLUNK_LOCAL} && [[ -f server.conf.CD1_B ]] && cp -f server.conf.CD1_B server.conf || echo "server.conf.CD1_B DOESNOT exit. Abort"
+                  ;;
+              5 )
+                  m_indexer="CD1_C"
+                  cd ${SPLUNK_LOCAL} && [[ -f server.conf.CD1_C ]] && cp -f server.conf.CD1_C server.conf || echo "server.conf.CD1_C DOESNOT exit. Abort"
+                  ;;
+#             6 )
+#                 cd ${SPLUNK_LOCAL} && [[ -f server.conf.CD1_D ]] && cp -f server.conf.CD1_D server.conf || echo "server.conf.CD1_D DOESNOT exit. Abort"
+#                 ;;
+              * )
+                  echo "Good Bye" && exit
+esac
+
+current_=`get_current_server_setting`
+echo -e "server.conf is pointing to ${bold_yellow}${m_indexer}${reset_color} ${cyan}${current_}${reset_color}"
+echo -en "Restarting Splunkd (${green}Y${reset_color}|${red}N${reset_color})? "
+read ans
+case $ans in
+     Y|y ) systemctl restart Splunkd
+           sh_fqdn=$(host `uname -n`|awk '{print $1}')
+           echo -e "Please login to ${cyan}http://${sh_fqdn}:8000${reset_color} and search"
+           ;;
+       * )
+           echo "As root, restart splunkd via \`systemctl restart Splunkd\`"
+           echo "Good Bye"
+           ;;
+esac
+

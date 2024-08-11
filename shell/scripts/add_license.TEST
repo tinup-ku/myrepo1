@@ -1,0 +1,3 @@
+#!/bin/bash
+sed -i '$a\\n\[license\]\nmaster_uri = https://ser14193pdv.dev.mycorp.com:8089\n' /opt/splunk/etc/system/local/server.conf
+

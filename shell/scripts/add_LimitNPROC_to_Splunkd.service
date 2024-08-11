@@ -1,0 +1,7 @@
+#!/bin/ksh
+
+cd /etc/systemd/system && {
+   sed -i '/^LimitNOFILE/a LimitNPROC=131072' Splunkd.service
+   sed -i 's/LimitNOFILE=65536/LimitNOFILE=262144/g' Splunkd.service
+}
+systemctl daemon-reload

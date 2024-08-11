@@ -1,0 +1,21 @@
+#!/bin/ksh
+date_=`date '+%Y%m%d'`
+cd /opt/splunk/etc/apps && {
+  # Identify top 5 biggest size apps
+  top_5_apps=`du -s *|sort -nr|head -5|awk '{print $NF}'`
+  # Get a list of all .csv files >500M
+  dot_csv_files=`find \$top_5_apps -name "*.csv" -size +80M -print`
+  echo "List of .csv files >500M"
+  echo
+  # Copy $dot_csv_files to /tmp/Lookup.${date_}
+  [[ ! -d /tmp/Lookup.${date_} ]] && mkdir -p /tmp/Lookup.${date_}
+  echo "Copy $dot_csv_files to /tmp/Lookup.${date_}"
+  echo
+  find $dot_csv_files|cpio -pdmvu /tmp/Lookup.${date_}
+  echo
+  for file in $dot_csv_files
+  do
+    ls -l $file
+  done
+}
+

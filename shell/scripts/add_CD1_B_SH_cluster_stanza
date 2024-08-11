@@ -1,0 +1,22 @@
+#!/bin/bash
+# This script will update Search Head ${SPLUNK_LOCAL}/server.conf
+# 1. Append , clustermaster:CD1_B to
+#    master_uri = clustermaster:PDC1, clustermaster:DC4, clustermaster:CD1_A
+#
+# 2. Add the following stanza 
+# < [clustermaster:CD1_B]
+# < master_uri = https://ser24-010638.us.global.mycorp.com:8089
+# < mode = searchhead
+# < multisite = true
+# < pass4SymmKey = prodcluster_2-loc44
+# <
+#
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+#SPLUNK_TMP=/tmp
+cd ${SPLUNK_LOCAL} && {
+#cd ${SPLUNK_TMP} && {
+   [[ -f server.conf ]] && \
+   sed -i.12082022 -e '1,/master_uri = clustermaster:PDC1, clustermaster:DC4, clustermaster:CD1_A/s/master_uri = clustermaster:PDC1, clustermaster:DC4, clustermaster:CD1_A/master_uri = clustermaster:PDC1, clustermaster:DC4, clustermaster:CD1_A, clustermaster:CD1_B/' -e '$ a\[clustermaster:CD1_B\]\nmaster_uri = https:\/\/ser24-010638.us.global.mycorp.com:8089\nmode = searchhead\nmultisite = true\npass4SymmKey = prodcluster_2-loc44\n' server.conf
+
+   chown ser_act.prod:unx_9998_access server.conf server.conf.12082022
+}

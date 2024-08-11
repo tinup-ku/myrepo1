@@ -1,0 +1,226 @@
+#!/bin/bash
+################################################################################
+# This script backs out current installed splunk version to its previous.
+# Output: /root/`basename $0`_splunk${current_version_no}.${date_}.OUT
+################################################################################
+# user_ | mycorp Data Intelligence
+SPLUNK_HOME=/opt/splunk
+date_=`date '+%Y%m%d'`
+current_version=`rpm -q splunk`
+current_version_no=`echo ${current_version} |awk -F"-" '{print $2}'`
+bold_yellow="\e[1m\e[33m"
+reset_color="\e[0m"
+
+
+usage ()
+{
+cat<<END
+
+Usage: $0 [ -v version_number ]
+
+Where: -v version to backout 
+
+END
+exit 1
+}
+
+unmount_mnt ()
+{
+  # Unmount more than 1 /mnt
+  for mount_point in `mount|grep nfs|grep mnt|awk '{print $3}'`
+  do
+    echo "umount -l $mount_point"
+    umount -l $mount_point
+  done
+}
+
+# Is Splunk running as a service account or root/splunk?
+cd ${SPLUNK_HOME}  && {
+  pre_uid=`ls -ld etc|awk '{print $3}'`
+  pre_gid=`ls -ld etc|awk '{print $4}'`
+  }
+
+echo "uid=$pre_uid  gid=$pre_gid"
+
+convert_to_service_account ()
+{
+  # Convert splunk to service account
+  echo 
+  echo "Convert ${SPLUNK_HOME} to service account: ${pre_uid}:${pre_gid}"
+  echo 
+
+  [ -d ${SPLUNK_HOME} ] && \
+  cd /opt && chown -R ${pre_uid}:${pre_gid} splunk
+
+  # Remove local splunk entry.
+  sed -i '/^splunk/d' /etc/passwd /etc/group /etc/shadow /etc/gshadow
+
+  chmod 500 ${SPLUNK_HOME}/bin/splunk
+  chmod u+s ${SPLUNK_HOME}/bin/splunk
+}
+
+check_splunk_process ()
+{
+    ps aux|grep [s]plunk >/dev/null
+    status=$?
+    [[ "$status" != "0" ]] && {
+      echo "Splunk is still UP. Upgrade to Splunk version ${ver} Aborted."
+      ps aux|grep [s]plunk
+      exit 2
+    }
+}
+
+stop_splunk_process ()
+{
+# Is it systemd or systemV init?
+  if [[ -f /etc/systemd/system/Splunkd.service ]]
+  then
+     systemctl stop Splunkd
+  else
+     if [[ -f /etc/init.d/splunk ]]
+     then
+        service splunk stop
+     fi
+  fi
+  # Verify
+  pgrep -u ${pre_uid} splunkd >/dev/null 2>&1
+  [[ "$?" = "0" ]] && pgrep -u ${pre_uid} splunkd | xargs kill -9
+  pgrep -u ${pre_uid} mongod >/dev/null 2>&1
+  [[ "$?" = "0" ]] && pgrep -u ${pre_uid} mongod | xargs kill -9
+}
+
+
+#########
+# M A I N
+#########
+if [[ ! $1 ]]
+then
+  echo "Splunk current version: ${current_version}"
+  echo
+  echo -n "Enter Splunk version (ie, 6.5.2) to backout? "
+  read ver
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -v ) ver=$2
+             shift
+             ;;
+      -*|* )
+             usage
+             ;;
+     esac
+     shift
+   done
+fi
+
+{
+[[ -z ${ver} ]] && usage
+
+
+if [[ "${current_version_no}" != "${ver}" ]]
+then
+   # Stop Splunk
+   echo -e "${bold_yellow}1. Stopping splunkd.${reset_color}"
+   stop_splunk_process 
+   splunk_status=`show_splunk|awk '/SPLUNK/{print $NF}'`
+   echo splunk_status=$splunk_status
+   if [[ "${splunk_status}" = "UP" ]]
+   then
+     echo "Splunk is still running. Try to stop Splunk again"
+     stop_splunk_process
+   fi 
+
+   echo "Sleep for 15 seconds then check splunk process again before proceeding."
+   sleep 15
+  
+   # Make sure splunk is DOWN
+   status=`show_splunk|awk '/SPLUNK/{print $NF}'`
+   if [[ "${status}" = "DOWN" ]]
+   then
+      check_splunk_process
+      # Rename current ${SPLUNK_HOME}/etc
+      echo "Rename current ${SPLUNK_HOME}/etc to etc_DELETE_AFTER_3_DAYS.${current_version}"
+      cd ${SPLUNK_HOME} && /bin/mv -f etc etc_DELETE_AFTER_3_DAYS.${current_version}
+         
+      # Downgrade splunk 
+      echo
+      echo -e "${bold_yellow}2. Downgrading splunk to ${ver} .${reset_color}" 
+      unmount_mnt
+      mount share_server.dev.mycorp.com:/infra/loc /mnt
+      [[ "$?" = "0" ]] && {
+            echo "Downgrading Splunk to ${ver}"
+            echo
+            cd /mnt/Splunk/${ver} && {
+              splunk_rpm=`ls -f splunk-${ver}*.rpm 2>/dev/null`
+              [[ -z ${splunk_rpm} ]] && {
+                 echo "/mnt/Splunk/${ver}, package does not exist. Abort"
+                 exit 4
+              }
+              rpm -Uvh --oldpackage ${splunk_rpm}
+            }
+      }
+
+
+      # Restore Splunk${ver} configuration...
+      echo -e "${bold_yellow}3. Restoring splunk version ${ver} configuration ...${reset_color}"
+      echo
+      echo "Restoring splunk version ${ver} configuration from ${SPLUNK_HOME}/etc-splunk-${ver}.tar.gz"
+      rpm -q splunk|grep "${ver}" >/dev/null
+      if [[ "$?" = "0" ]]
+      then
+        cd ${SPLUNK_HOME} && tar xzpf etc-splunk-${ver}.tar.gz 
+      else
+        echo "Current splunk version is still there: `rpm -q splunk`"
+      fi
+
+      # Check splunk's uid. If service account, convert
+      cd ${SPLUNK_HOME}/bin  && post_uid=`ls -ld splunkd|awk '{print $3}'`
+
+      [[ "${post_uid}" != "${pre_uid}" ]]  && convert_to_service_account
+      echo -e "${bold_yellow}4. Cleaning up current Splunkd.service version ${current_version}${reset_color}"
+      ${SPLUNK_HOME}/bin/splunk disable boot-start
+       
+      echo
+      echo -e "${bold_yellow}5. Creating Splunkd.service version ${ver}${reset_color}"
+      echo "Enable splunkd@boot"
+      ${SPLUNK_HOME}/bin/splunk enable boot-start -systemd-managed 1 -user ${pre_uid} -group ${pre_gid}
+      echo
+      ## Start Splunk....
+      echo -e "${bold_yellow}6. Starting splunkd version ${ver} ...${reset_color}"
+      if [[ "${pre_uid}" = "ser_act.prod" ]] || \
+         [[ "${pre_uid}" = "ser_act.dev" ]]
+      then
+         echo "Running su - ${pre_uid} -c '/opt/splunk/bin/splunk start --answer-yes --no-prompt --accept-license'"
+         su - ${pre_uid} -c '/opt/splunk/bin/splunk start --answer-yes --no-prompt --accept-license'
+      else
+         echo "Running /opt/splunk/bin/splunk start --answer-yes --no-prompt --accept-license"
+         /opt/splunk/bin/splunk start --answer-yes --no-prompt --accept-license
+      fi
+   fi
+   echo
+   echo -e "${bold_yellow}7. Stopping splunkd ...${reset_color}"
+   case ${pre_uid} in
+        ser_act.prod | ser_act.dev )
+               su - ${pre_uid} -c '/opt/splunk/bin/splunk stop'
+               stop_splunk_process
+               ;;
+                                             * )
+               ${SPLUNK_HOME}/bin/splunk stop
+               stop_splunk_process
+               ;;
+   esac
+   echo
+   echo -e "Current Splunk installed: ${bold_yellow}`rpm -q splunk`${reset_color}"
+   echo
+else
+   echo
+   echo -e "${current_version_no} is already INSTALLED: ${bold_yellow}${current_version}${reset_color}"
+   exit 2
+fi
+
+## Make sure Splunk is up....
+echo
+show_splunk -s
+} | tee /root/`basename $0`_splunk${current_version_no}.${date_}.OUT
+

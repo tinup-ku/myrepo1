@@ -1,0 +1,1 @@
+index=secops* | stats count by splunk_server

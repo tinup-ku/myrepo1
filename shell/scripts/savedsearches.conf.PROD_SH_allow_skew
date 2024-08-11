@@ -1,0 +1,7 @@
+###############
+# contents migrated to: /opt/splunk/etc/apps/search/local/savedsearches.conf
+###############
+# Splunk : add allow_skew to ${SPLUNK_LOCAL}/savedsearches.conf - 6/10/20 CRQ000000664762
+[default]
+allow_skew=30%
+

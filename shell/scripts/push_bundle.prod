@@ -1,0 +1,50 @@
+#!/bin/bash
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%F_%H%M')
+
+env_=`uname -n|grep -o '...$'`
+
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               ;;
+   some_loc | loc2 ) uid=ser_act.prod
+               ;;
+esac
+
+if [[ "`whoami`" != "${uid}" ]]
+then
+   echo "Running `basename $0` as ${uid} only. Abort."
+   exit
+fi
+
+{
+${SPLUNK_BIN}/splunk login -auth admin:$(uname -n)_admin
+echo
+echo "Pushing Deployment bundle to Search Head peers. This might take sometime..."
+echo
+echo "START: `date`"
+nohup ${SPLUNK_BIN}/splunk apply shcluster-bundle -target https://ser14350some_loc.some_loc.mycorp.com:8089 -preserve-lookups true  --answer-yes --no-prompt &
+job_pid=$!
+echo "${job_pid}" > /var/tmp/push_bunble.PID
+echo "Background process id for the job: ${job_pid}"
+} | tee /var/tmp/`basename $0`.${date_}
+
+while [ 1 ]
+do
+ # Check if push_bunble.PID is still running
+ ps -p `cat /var/tmp/push_bunble.PID` >/dev/null
+ if [[ "$?" != "0" ]]
+ then
+    grep 'Bundle has been pushed successfully to all the cluster members' /var/tmp/`basename $0`.${date_} >/dev/null
+    if [[ "$?" = "0" ]]
+    then
+      mailx -s "$(uname -n): Bundle has been pushed successfully to all the cluster members" user1@mycorp.com,user2@mycorp.com < /var/tmp/`basename $0`.${date_}
+      exit
+    else
+      sleep 3m
+    fi
+ else
+    sleep 3m
+ fi
+done
+

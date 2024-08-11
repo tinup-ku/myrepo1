@@ -1,0 +1,36 @@
+#!/bin/bash
+
+get_hostname_chars ()
+{
+hostname_=`uname -n`
+# Check if server is in Dallas or other
+# IaaS or phyiscal in DC4
+# IaaS:
+#   - PROD: ser24-xxxxxx
+#   - DEV/QA: cud4-xxxxxx
+# Physical:
+#   - PROD: s0029loc3
+#   - DEV/QA/TEST: s0029tdv | s0029tdt
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+first_four_chars=`echo ${hostname_}|grep -o '^....'`
+first_char=`echo ${first_four_chars}|grep -o '^.'`
+third_char=`echo ${first_four_chars}|cut -c3`
+fourth_char=`echo ${first_four_chars}|grep -o '.$'`
+}
+
+get_hostname_chars
+case ${hostname_} in
+          *pdv | *bdv )
+                       echo $dev 
+                       ;;
+          *some_loc | *loc2 | *loc3 | ser2* )
+                       echo $prod
+                       ;;
+                          * )
+                             echo "${hostname_} is not ending with *loc3 | *some_loc | *loc2 | *pdv | *bdv. Abort"
+                             exit
+                             ;;
+esac
+

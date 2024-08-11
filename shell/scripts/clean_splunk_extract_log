@@ -1,0 +1,21 @@
+#!/bin/bash
+#################################################################################
+# This script is to delete files in /tmp/S2H/LOG
+# 
+# These files come from daily cron job
+# 0 5 * * * /usr/local/bin/clean_splunk_extract_log
+# 
+#################################################################################
+# Written by user1 | T O S Splunk Platform
+LOG=/tmp/S2H/LOG
+{
+echo "START: `date` ##########"
+echo "List of files to be deleted in  ${LOG}"
+cd ${LOG} && find . -type f ! -mmin -4320 -exec ls -l {} +
+echo
+echo "Deleting files older than 3 days in ${LOG}"
+cd ${LOG} && find . -type f ! -mmin -4320 -exec rm -f {} +
+echo "END: `date`"
+} >> /var/tmp/`basename $0`.out
+
+

@@ -1,0 +1,216 @@
+#!/bin/ksh
+####################################################################################
+# This script performs the followings:
+# 1. Creates Max size lvm, /dev/rootvg/splunklv, from secondary drive, /dev/sdb
+# 2. Install splunk-7.2.6.
+# 3. Install latest Java version along with below RHEL packages
+#    kernel-headers,glibc-headers,gcc,gdb,zip,unzip
+# 4. Set ulimit's soft+hard in /etc/security/limits.conf to 262144
+# 5. Set splunk fs.file-max = 2048000 in /etc/sysctl.conf
+# 6. Set nproc's soft+hard in /etc/security/limits.d/20-nproc.conf to 131072
+# 7. Disable Transparent Huge Pages as recommended by Splunk
+####################################################################################
+# Written by user1 | T O S Platform A
+SPLUNK_HOME=/opt/splunk
+SPLUNK_LOCAL=${SPLUNK_HOME}/etc/system/local
+splunk_version="splunk-7.2.6-c0bf0f679ce9.x86_64"
+date_=$(date '+%a%H%M_%m%d%Y')
+
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+{
+# Written by JPD.
+# If splunk ${splunk_version} installed then exit
+[[ "`rpm -q splunk`" = "${splunk_version}" ]] && {
+  echo "${splunk_version} installed. Abort."
+  exit
+}
+
+#
+# Check if splunklv created
+lvs |grep splunklv >/dev/null
+if [[ "$?" != "0" ]]
+then
+      echo "Formatting /dev/sdb"
+      parted -s /dev/sdb mklabel gpt
+      parted -s -- /dev/sdb unit GB mkpart primary ext4 0% 100%
+      partprobe
+      echo "Creating physical volume, /dev/sdb1"
+      pvcreate /dev/sdb1
+      echo "Creating volume group, splunkvg"
+      vgcreate splunkvg /dev/sdb1
+      echo "Creating lvm: splunklv"
+      lvcreate -l 100%FREE -n splunklv splunkvg
+      echo "Creating file system: /dev/splunkvg/splunklv"
+      mkfs.ext4 -m 1 /dev/splunkvg/splunklv
+      [[ ! -d /opt/splunk ]] && mkdir /opt/splunk
+      # Add /dev/mapper/splunkvg-splunklv /opt/splunk     ext4     defaults        0 0
+      echo "Updating local mount table: /opt/splunk"
+      cp /etc/fstab /etc/fstab.ORIG
+      sed -i '$a/dev/mapper/splunkvg-splunklv /opt/splunk       ext4    defaults        0 0' /etc/fstab
+      echo "Mounting /opt/splunk"
+      mount /opt/splunk
+else
+   echo "/dev/splunkvg/splunklv already created. Skip."
+fi
+
+
+[[ ! -d /mnt1 ]] && mkdir /mnt1
+# Install splunk 7.2.6: splunk-7.2.6-c0bf0f679ce9.x86_64
+echo "Installing splunk-7.2.6-c0bf0f679ce9-linux-2.6-x86_64.rpm"
+mount|grep '^share_server.dev.mycorp.com:/infra/loc' >/dev/null
+[[ "$?" != "0" ]] && mount share_server.dev.mycorp.com:/infra/loc /mnt1
+cd /mnt1/Splunk/7.2.6 && rpm -ivh splunk-7.2.6-c0bf0f679ce9-linux-2.6-x86_64.rpm
+
+echo "Creating ${SPLUNK_HOME}/etc/system/local/user-seed.conf"
+cat <<END > ${SPLUNK_HOME}/etc/system/local/user-seed.conf
+[user_info]
+USERNAME = admin
+PASSWORD = `uname -n`_admin
+END
+
+echo
+echo "Enable splunk@system bootup"
+# ${SPLUNK_BIN}/splunk enable boot-start --answer-yes --no-prompt --accept-license
+# Enable System V initd rather than systemd on RHEL7 + Splunk version 7 or >
+# by adding '-systemd-managed 0' in splunk enable boot-start
+
+${SPLUNK_HOME}/bin/splunk enable boot-start --answer-yes --no-prompt --accept-license
+echo
+echo "Enable Splunkd.service"
+systemctl enable Splunkd.service
+echo "Start Splunkd.service"
+systemctl start Splunkd.service
+echo
+echo "Checking Splunkd.service status"
+systemctl status Splunkd.service
+
+echo "Copying show_splunk to $LOCAL_BIN"
+cd /mnt1/scripts && cp -f show_splunk $LOCAL_BIN/show_splunk
+echo
+echo "In $LOCAL_BIN, creating stop_splunk, start_splunk"
+cat <<END > $LOCAL_BIN/start_splunk
+#!/bin/ksh
+systemctl start Splunkd.service
+END
+
+cat<<END_ > $LOCAL_BIN/stop_splunk
+#!/bin/ksh
+systemctl stop Splunkd.service
+systemctl daemon-reload
+END_
+
+cat<<END__ > $LOCAL_BIN/restart_splunk
+#!/bin/ksh
+stop_splunk
+sleep 1
+start_splunk
+END__
+
+cd /usr/local/bin && chmod +x start_splunk stop_splunk restart_splunk
+
+# Install latest Java
+echo
+echo "Installing latest Java JDK-1.8-Latest-Linux64.rpm"
+rpm -ivh /mnt1/Java/JDK-1.8-Latest-Linux64.rpm
+
+[[ ! -f $LOCAL_BIN/os-update ]] && cp /mnt/Splunk/scripts/os-update $LOCAL_BIN && \
+chmod +x $LOCAL_BIN/os-update
+# Install additional packages as required by METs
+echo 
+echo "Installing required packages:"
+os-update -k `uname -r|sed 's/.x86_64//g'` -y install kernel-headers
+os-update -y install glibc-headers
+os-update -y install gcc
+os-update -y install gdb
+os-update -y install zip
+os-update -y install unzip
+os-update -y install nc nmap
+rpm -q kernel-headers glibc-headers gcc gdb zip
+
+# Set up splunk parameters
+# 1. /etc/security/limits.conf
+echo
+grep '262144' /etc/security/limits.conf >/dev/null
+[[ "$?" != "0" ]] && {
+   echo "Updating /etc/security/limits.conf"
+   mv -f /etc/security/limits.conf /etc/security/limits.conf.ORIG
+   {
+   cat /etc/security/limits.conf.ORIG
+   cat<<END_
+# Begin Splunk Settings
+*     soft    nofile  262144
+*     hard    nofile  262144
+# End Splunk Settings
+END_
+   } >> /etc/security/limits.conf
+}
+
+# 2. /etc/sysctl.conf
+echo
+grep 'fs.file-max = 2048000' /etc/sysctl.conf >/dev/null
+[[ "$?" != "0" ]] && {
+   echo "Updating /etc/sysctl.conf"
+   mv -f /etc/sysctl.conf /etc/sysctl.conf.ORIG
+   {
+   cat /etc/sysctl.conf.ORIG
+cat<<END__
+# Begin Splunk Settings
+fs.file-max = 2048000
+# End Splunk Settings
+END__
+   } >> /etc/sysctl.conf
+}
+sysctl -p
+
+# 3. /etc/security/limits.d/20-nproc.conf: nproc set to 131072 per Splunk's recommendation.
+echo
+echo "Updating /etc/security/limits.d/20-nproc.conf"
+{
+cat<<END
+# Default limit for number of user's processes to prevent
+# accidental fork bombs.
+# See rhbz #432903 for reasoning.
+
+*          soft    nproc     131072
+*          hard    nproc     131072
+root       soft    nproc     unlimited
+END
+} > /etc/security/limits.d/20-nproc.conf
+
+chmod 644 /etc/security/limits.d/20-nproc.conf
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+echo "Splunk recommends to turn off Transparent Huge Pages (THP)"
+echo "Updating /etc/rc.local:"
+[ -f /etc/rc.d/rc.local ] && {
+  /bin/cp -p /etc/rc.d/rc.local /etc/rc.d/ORIG.rc.local
+  {
+    cat /etc/rc.d/ORIG.rc.local
+    cat<<EOF
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP). 
+# This has a profound impact on system load. There's a decent Oracle Blog 
+# about it at 
+# https://blogs.oracle.com/linux/entry/performance_issues_with_transparent_huge. 
+# http://answers.splunk.com/answers/112305/on-rh-6-and-splunk-6-my-searches-are-consuming-lots-of-cpu
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+EOF
+  } > /etc/rc.d/rc.local
+
+chmod +x /etc/rc.d/rc.local
+/etc/rc.d/rc.local
+}
+echo "COMPLETED."
+cd && umount /mnt
+echo
+echo "Make sure ser10966some_loc:/opt/splunk/etc/datetime.xml is updated on all NEW INDEXER: `uname -n`"
+echo
+} 2>&1 | tee /root/`basename $0`.${date_}.output
+echo
+echo "OUTPUT: /root/`basename $0`.${date_}.output"

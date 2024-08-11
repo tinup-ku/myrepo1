@@ -1,0 +1,43 @@
+#!/bin/bash
+#Usage
+# jldsh -ew ser10859some_loc,ser24-005385,ser27-005833,ser24-010638,ser27-005850 -s ./check_CM_bundle_status
+# jldsh -ew ser10859some_loc,ser24-005385,ser27-005833,ser24-010638,ser27-005850,ser24-010472 -s ./check_CM_bundle_status
+SPLUNK_BIN=/opt/splunk/bin
+env_=`uname -n|grep -o '...$'`
+
+bold_yellow="\e[1m\e[33m"
+reset_color="\e[0m"
+
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=${dev}
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=ser_act.prod
+               key=${prod}
+               ;;
+           * )
+               case `uname -n` in
+                   ser2* ) uid=ser_act.prod
+                          key=${prod}
+                           ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                key=${dev}
+                           ;;
+               esac
+               ;;
+esac
+case `uname -n` in
+      ser10859some_loc  ) echo -e "${bold_yellow}Legagy Cluster Master${reset_color}";;
+      ser24-005385 ) echo -e "${bold_yellow}Legagy DC4 Cluster Master${reset_color}";;
+      ser27-005833 ) echo -e "${bold_yellow}CD1_A Cluster master${reset_color}";;
+      ser24-010638 ) echo -e "${bold_yellow}CD1_B Cluster master${reset_color}";;
+      ser27-005850 ) echo -e "${bold_yellow}CD1_C Cluster master${reset_color}";;
+      ser24-010472 ) echo -e "${bold_yellow}CD1_D Cluster master${reset_color}";;
+      
+esac
+su - ${uid} -c "${SPLUNK_BIN}/splunk show cluster-bundle-status -auth admin:${key} 2>/dev/null|grep -A15 master"
+

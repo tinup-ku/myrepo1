@@ -1,0 +1,140 @@
+#!/bin/bash
+##############################################################################
+# This script adds new search head into search head cluster,
+# PROD: https://splunk.mycorp.com
+# PRePROD: https://splunk-preprod.mycorp.com
+# ES: https://splunk-es.mycorp.com
+# ITSI: https://splunk-itsi.mycorp.com
+#
+# Once new search head is initialized, ${SPLUNK_LOCAL}/server.conf's stanza,
+# [shclustering], the followings will be added 
+# - If search head is adhoc,
+#   conf_replication_include.passwd = true
+#   captain_is_adhoc_searchhead = true
+#   adhoc_searchhead = true
+# - If search head is regular or none
+#   conf_replication_include.passwd = true
+#   captain_is_adhoc_searchhead = true
+# NOTE:
+#   Before running this script, new search head needs to be initialized via
+#   ${new_sh}'s initialize_SH as Splunk service account.
+##############################################################################
+# Written by user1 | TOS Splunk Platform
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%a%H%M_%m%d%Y')
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+set_env ()
+{
+   case ${env__} in
+        PR|pr|pR|Pr )
+                      F5_fqdn=splunk-preprod.mycorp.com
+                      SH_Deployer=ser10982some_loc.some_loc.mycorp.com
+                      secret=preprodcluster
+                      shcluster_label=preprod_shcluster
+                      option=none
+                      ;;
+                P|p )
+                      F5_fqdn=splunk.mycorp.com
+                      SH_Deployer=splunkdeployer.mycorp.com
+                      secret=prodcluster
+                      shcluster_label=prod_shcluster
+                      echo -en "Is $1 [${bold_yellow}A${reset_color}]dhoc, or [${bold_yellow}N${reset_color}]one? "
+                      read ans
+                      case ${ans} in
+                            A|a ) option=adhoc
+                                  ;;
+                            N|n ) option=none
+                                  ;;
+                      esac
+                      ;;
+                E|e )
+                      F5_fqdn=splunk-es.mycorp.com
+                      SH_Deployer=splunkdeployer.mycorp.com
+                      secret=prodcluster
+                      shcluster_label=prod-es_shcluster
+                      option=none
+                      ;;
+                I|i )
+                      F5_fqdn=splunk-itsi.mycorp.com
+                      SH_Deployer=splunkdeployer-itsi.mycorp.com
+                      secret=prodcluster
+                      shcluster_label=prod-itsi_shcluster
+                      option=none
+                      ;;
+                X|x )
+                      F5_fqdn=splunk-extracts.mycorp.com
+                      SH_Deployer=ser10983some_loc.some_loc.mycorp.com
+                      secret=weblogs_shcluster
+                      shcluster_label=weblogs_shcluster
+                      option=none
+                      ;;
+                  * )
+                      echo -en "Enter ${bold_yellow}PR${reset_color}, ${bold_yellow}P${reset_color},${bold_yellow}E|I|X${reset_color}. Try again."
+                      exit
+                      ;;
+   esac
+}
+
+get_key ()
+{
+  {
+    eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+  } 2>/dev/null
+  # Service Account only.
+  case ${env_} in
+     pdv | bdv ) uid=ser_act.dev
+                 key=${dev}
+                 ;;
+     some_loc | loc2 | loc3 |loc4  ) uid=ser_act.prod
+                             key=${prod}
+                 ;;
+             * )
+                 case ${sh} in
+                        ser21* | ser24* | ser27* ) uid=ser_act.prod
+                                                key=${prod}
+                                                ;;
+                        cud*| cut* ) uid=ser_act.dev
+                                     key=${dev}
+                                     ;;
+                 esac
+                 ;;
+  esac
+  
+
+}
+
+##########
+# M A I N
+##########
+echo -n "Enter new Search Head hostname (w/o FQDN)? "
+read sh
+sh_fqdn=$(host ${sh}|awk '{print $1}')
+env_=$(echo ${sh}|grep -o '...$')
+
+echo -en "Is $sh [${bold_yellow}PR${reset_color}]e-Prod, [${bold_yellow}P${reset_color}]ROD, [${bold_yellow}E${reset_color}]S, or [${bold_yellow}I${reset_color}]TSI, or WebLog E[${bold_yellow}X${reset_color}]tract Search Head? "
+read env__
+set_env ${sh}
+get_key
+
+captain=$(curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g')
+echo captain=$captain
+
+
+echo -n "Is ${sh_fqdn} initialized via \`initialize_SH\` (Y|N)? "
+read ans
+
+case ${ans} in 
+     Y|y )
+           echo "On https://${F5_fqdn}'s captain, ${captain}, adding ${sh_fqdn}. Please wait"
+           ssh -q ${captain} "su - ${uid} -c \"${SPLUNK_BIN}/splunk add shcluster-member -new_member_uri https://${sh_fqdn}:8089 -auth admin:${key}\" "
+           ;;
+       * )
+           echo "On ${sh}, as ${uid}, run \`initialize_SH\`"
+           echo "Abort. Exit"
+           ;;
+esac

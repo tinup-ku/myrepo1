@@ -1,0 +1,4 @@
+#!/bin/ksh
+# Test RB F5 splunktest.dev.mycorp.com
+# DC4 PP SH ser24-008178.us.global.mycorp.com has address 10.193.2.24
+curl -vk https://10.193.2.24:8000/en-US/account/login -H host:splunk-preprod.mycorp.com

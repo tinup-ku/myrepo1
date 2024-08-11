@@ -1,0 +1,15 @@
+#!/bin/ksh
+
+echo -n "Enter guid? "
+read guid
+
+for g_uid in $guid
+do
+  jldsh -eg splunk_multisite_indexers_pdc1,splunk_multisite_indexers_pdc3 "awk -F= '/^guid/{print \$NF}' /opt/splunk/etc/instance.cfg" | while read line
+do
+   guid_=`echo $line|awk -F: '{print $NF}'`
+   echo ${guid_}|grep "${guid}" >/dev/null 2>&1
+   [[ "$?" = "0" ]] && echo $line
+  done
+done
+

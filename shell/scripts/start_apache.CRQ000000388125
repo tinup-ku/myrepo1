@@ -1,0 +1,23 @@
+#!/bin/ksh
+
+####################################################################################################
+#                               RedHat Apache Maintenance AIO Package
+#                                       Invented by: Alex Qin
+#                                          on: 04/04/2014
+#                                   Sponsored by: com1 mycorp
+#                            (C) 2012-9999 com1 mycorp & Co., Inc.
+#            All rights reserved. Unauthorized access is prohibited. Usage is monitored
+####################################################################################################
+
+export LD_LIBRARY_PATH=/opt/OAM11g/apache_Webgate_home/webgate/apache/lib
+
+cmdDir="$(dirname $0)"; [[ "$cmdDir" = +(.)* ]] && cmdDir=$(cd $cmdDir && pwd)
+
+tmpCmd="$cmdDir/ctrl_apache start_apache"
+
+while (( $# )); do
+	tmpCmd="$tmpCmd \"$1\""
+	shift
+done
+
+eval $tmpCmd

@@ -1,0 +1,238 @@
+#!/bin/bash
+##############################################################################
+# This script intializes new search head before adding to search head cluster 
+# in DEV/QA,
+# Adding new search head to existing SHC is a 2-steps process
+# 1. Initialize new search head
+# 2. From an existing search head (preferably SHC captain), add new SH
+# https://community.splunk.com/t5/Deployment-Architecture/How-to-add-a-new-search-head-to-an-existing-SHC/m-p/437588
+#
+# DEV F5:
+# splunk-dev.dev.mycorp.com
+# splunk-restapi-dev.dev.mycorp.com
+# splunk-lab.dev.mycorp.com
+# splunktest.dev.mycorp.com
+#
+# QA F5:
+# splunk-qa.dev.mycorp.com
+# splunk-restapi-qa.dev.mycorp.com
+#
+# RHEL9 Currency Refresh projects
+# DEV Environment:
+# https://jira.mycorp.com/browse/SED-368 All_PDC13_DEV_SH
+# https://jira.mycorp.com/browse/SED-373 All_Training_SH
+# https://jira.mycorp.com/browse/SED-377 All_TEST_Search_SH
+# https://jira.mycorp.com/browse/SED-382 All_DEV_restAPI_SH
+# QA Environment:
+# https://jira.mycorp.com/browse/SED-387 All_QA_SH_cluster
+# https://jira.mycorp.com/browse/SED-391 All_QA_restAPI_SH 
+#
+# Once new search head is initialized, ${SPLUNK_LOCAL}/server.conf's stanza,
+# [shclustering], the followings will be added 
+# - If search head is regular, in ${SPLUNK_LOCAL}/server.conf
+#   https://docs.splunk.com/Documentation/Splunk/9.2.1/DistSearch/HowconfrepoworksinSHC
+#   conf_replication_include.authentication = false 
+#   Note, the default setting is "true"
+#   ${SPLUNK_ETC}/system/default/server.conf:conf_replication_include.passwd = true
+##############################################################################
+# Written by user1 | TOS Splunk Platform
+node=`uname -n`
+node_fqdn=$(host $node|awk '{print $1}')
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%a%H%M_%m%d%Y')
+env_=`uname -n|grep -o '...$'`
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+set_env ()
+{
+   # DEV F5:
+   # splunk-dev.dev.mycorp.com
+   # splunk-restapi-dev.dev.mycorp.com
+   # splunk-lab.dev.mycorp.com
+   # splunktest.dev.mycorp.com
+   #
+   # QA F5:
+   # splunk-qa.dev.mycorp.com
+   # splunk-restapi-qa.dev.mycorp.com
+   #
+   echo
+   case ${env__} in
+        D|d )
+              env_=DEV
+              echo
+              echo "Below are SHC F5 in ${env_}:"
+              echo "------------------------------------"
+              echo -e "${bold_yellow}1${reset_color}. splunk-dev.dev.mycorp.com"
+              echo -e "${bold_yellow}2${reset_color}. splunk-restapi-dev.dev.mycorp.com"
+              echo -e "${bold_yellow}3${reset_color}. splunk-lab.dev.mycorp.com"
+              echo -e "${bold_yellow}4${reset_color}. splunktest.dev.mycorp.com"
+              echo "------------------------------------"
+              echo
+              echo -en "Enter ${bold_yellow}numeric${reset_color} value represents SH Cluster to initialize? "
+              read num_
+              case ${num_} in
+                   1 )
+                       F5_fqdn=splunk-dev.dev.mycorp.com
+		       search_peer=cud1c-004733.csdev.corp
+                       SH_Deployer=cud2-008139.us.global.mycorp.com
+                       shcluster_label=devcluster
+                       secret=${shcluster_label}
+                       option=${F5_fqdn}
+                      ;;
+                   2 )
+                       F5_fqdn=splunk-restapi-dev.dev.mycorp.com
+                       SH_Deployer=cud1-014783.us.global.mycorp.com
+                       shcluster_label=restapi
+                       secret=${shcluster_label}
+                       option=${F5_fqdn}
+                       ;;
+                   3 )
+                       F5_fqdn=splunk-lab.dev.mycorp.com
+                       SH_Deployer=ser13277pdv.dev.mycorp.com
+                       shcluster_label=training
+                       secret=${shcluster_label}
+                       option=${F5_fqdn}
+                       ;;
+                   4 )
+                       F5_fqdn=splunktest.dev.mycorp.com
+                       SH_Deployer=ser13278pdv.dev.mycorp.com
+                       shcluster_label=testcluster
+                       secret=${shcluster_label}
+                       option=${F5_fqdn}
+                       ;;
+                  * )
+                      echo -en "Enter incorrect option. Try again."
+                      exit
+                      ;;
+              esac
+              ;;
+        Q|q )
+              env_=QA
+              echo
+              echo "Below are SHC F5 in ${env_}:"
+              echo "------------------------------------"
+              echo -e "${bold_yellow}1${reset_color}. splunk-qa.dev.mycorp.com"
+              echo -e "${bold_yellow}2${reset_color}. splunk-restapi-qa.dev.mycorp.com"
+              echo "------------------------------------"
+              echo
+              echo -en "Enter ${bold_yellow}numeric${reset_color} value represents ${env_} SHC to initialize? "
+              read num_
+              case ${num_} in
+                   1 )
+                       F5_fqdn=splunk-qa.dev.mycorp.com
+                       SH_Deployer=cud1-008622.us.global.mycorp.com
+                       shcluster_label=qacluster
+                       secret=${shcluster_label}
+                       option=${F5_fqdn}
+                      ;;
+                   2 )
+                       F5_fqdn=splunk-restapi-qa.dev.mycorp.com
+                       SH_Deployer=cud1-014780.us.global.mycorp.com
+                       shcluster_label=restapi
+                       secret=${shcluster_label}
+                       option=${F5_fqdn}
+                      ;;
+                  * )
+                      echo -en "Enter incorrect option. Try again."
+                      exit
+                      ;;
+              esac
+              ;;
+          * )
+              echo "Entered incorrect option. Try again."
+              exit
+              ;;
+   esac
+}
+
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+
+# Service Account only.
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=${dev}
+               ;;
+   some_loc | loc2 | loc3 |loc4  ) uid=ser_act.prod
+                           key=${prod}
+               ;;
+           * )
+               case `uname -n` in
+                        ser21* | ser24* | ser27* ) uid=ser_act.prod
+                                                key=${prod}
+                                                ;;
+                        cud* | cut* ) uid=ser_act.dev
+                                     key=${dev}
+                                     ;;
+               esac
+               ;;
+esac
+
+if [[ "`whoami`" != "${uid}" ]]
+then
+   echo "Running `basename $0` as ${uid} only. Abort."
+   exit
+fi
+
+echo "Initializing Search Head $node as new search peer in SHC"
+
+echo -en "Is it in [${bold_yellow}D${reset_color}]EV, or [${bold_yellow}Q${reset_color}]A, Search Head Cluster? "
+read env__
+set_env
+echo 
+echo "Identifying SHC captain from F5 ${F5_fqdn}" 
+captain=`curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+
+echo "SHC captain=${captain}"
+echo
+
+[[ -z ${captain} ]] && {
+	echo "Unknown SHC captain. Using search peer, ${search_peer}"
+        captain=$search_peer
+}
+
+
+{
+# Initialize the instance
+grep '^\[shclustering' ${SPLUNK_LOCAL}/server.conf >/dev/null
+if [[ "$?" != "0" ]]
+then
+   echo
+   echo -e "${bold_yellow}1${reset_color}. Initializing ${bold_yellow}$node${reset_color} in ${env} ${bold_yellow}${option}${reset_color}"
+   ${SPLUNK_BIN}/splunk login -auth admin:${key}
+   ${SPLUNK_BIN}/splunk init shcluster-config -mgmt_uri https://${node_fqdn}:8089 -replication_port 9886 -replication_factor 3 -conf_deploy_fetch_url https://${SH_Deployer}:8089 -secret ${secret} -shcluster_label ${shcluster_label}
+else
+   echo "${node_fqdn} already initialized. Run \`show_shcluster-status\` to check if it's a member in SHC."
+   exit
+fi
+
+
+cat<<END
+
+Add the followings to ${SPLUNK_LOCAL}/server.conf [shclustering] stanza:
+
+conf_replication_include.authentication = false 
+
+END
+
+sed -i.ORIG 's/\[shclustering\]/&\nconf_replication_include.authentication = false/' ${SPLUNK_LOCAL}/server.conf
+
+echo "Now restarting splunk and check kvstore via \`/opt/splunk/bin/splunk show kvstore-status\` as ${uid}" 
+echo
+echo "Once splunk restarted on ${node}, run \`show_kvstore\` as root"
+echo "Verify kvstore status as shown below before adding to SHC via captain ${captain}"
+echo
+echo -e "${bold_yellow}port:8191${reset_color}"
+echo -e "${bold_yellow}status:starting${reset_color}"
+echo
+echo -e "${bold_yellow}2${reset_color}. Next step, as ${uid} on ${F5_fqdn} Search Head captain, ${captain}, run "
+echo -e "${bold_yellow}${SPLUNK_BIN}/splunk add shcluster-member -new_member_uri https://${node_fqdn}:8089 -auth admin:${key}${reset_color}"
+} | tee /${uid}/`basename $0`.${date_}.OUT
+echo
+echo "OUTPUT: /${uid}/`basename $0`.${date_}.OUT"

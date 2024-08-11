@@ -1,0 +1,14 @@
+#!/bin/bash
+#https://unix.stackexchange.com/questions/72889/how-to-determine-which-module-taints-the-kernel
+# If a module has no taint then the taint file will only contain a newline, 
+# which od represents as "000012"
+cat /proc/modules |
+while read module rest
+do
+    [[ -f /sys/module/$module/taint ]] && {
+       if [[ $(od -A n /sys/module/$module/taint) != " 000012" ]] ; then
+           echo $module
+       fi
+    }
+done
+

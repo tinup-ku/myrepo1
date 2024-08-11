@@ -1,0 +1,22 @@
+#!/bin/bash
+# https://access.redhat.com/solutions/56021
+
+echo
+echo "1.Starting abrtd.service"
+systemctl start abrtd.service
+echo
+echo "Enable abrtd.service"
+systemctl enable abrtd.service
+echo
+echo "verifying abrtd.service"
+systemctl status abrtd.service|grep Active
+echo
+echo "2.Starting abrt-ccpp.service"
+systemctl start abrt-ccpp.service
+echo
+echo "Enable abrt-ccpp.service"
+systemctl enable abrt-ccpp.service
+echo
+echo "verifying abrt-ccpp.service"
+systemctl status abrt-ccpp.service|grep Active
+echo

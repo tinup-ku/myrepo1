@@ -1,0 +1,103 @@
+#!/bin/ksh
+###################################################################################
+# This script runs on Splunk Index Cluster Master and checks for conditions below
+# to ensure it's healthiness.
+#
+# Pre-flight check successful .................. YES
+# ├────── Site replication factor met .......... YES
+# ├────── Site search factor met ............... YES
+# ├────── All data is searchable ............... YES
+#
+# Outputs:
+# . GOOD
+#   All conditions are YES
+# . BAD
+#   Any of the conditions above is not met.
+###################################################################################
+# user1 P user1 | Team
+SPLUNK_BIN=/opt/splunk/bin
+# Store lines in array array_line
+set -A array_line $line
+set -A array_value $value
+line_=""
+num=0
+env_=`uname -n`
+typeset -R3 env_
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 ) uid=ser_act.prod
+               key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                   ser24* ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           key=$prod
+                           ;;
+                   cud4*| cut4* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=$dev
+                           ;;
+               esac
+               ;;
+esac
+
+
+if [[ "$1" = "-v" ]]
+then
+    su - ${uid} "${SPLUNK_BIN}/splunk show cluster-status --verbose -auth admin:${key}"
+else  
+   {
+     su - ${uid} -c "${SPLUNK_BIN}/splunk show cluster-status --verbose -auth admin:${key}"|grep -A3 'Pre-flight check successful'
+   } | while read line
+       do
+         array_line[${num}]=`echo $line`
+         echo ${array_line[${num}]} |grep 'YES' >/dev/null 2>&1
+         [[ "$?" = "0" ]] && array_value[${num}]=`echo $line|awk '{print $NF}'`
+         num=`expr $num + 1`
+       done
+   
+   # Build array string: 
+   k=0
+   l=0
+   get_array ()
+   {
+     for i in ${array_value[*]}
+     do
+        echo -n '[[ "${array_value['
+        echo -n $k
+        echo -n ']}"'
+        #echo -n ' != '
+        echo -n ' = '
+        #echo -n '"YES'
+        echo -n '"'
+        echo -n ${array_value[$l]}
+        [[ $k -lt 3 ]] && echo -n '" ]] && ' 
+        k=`expr $k + 1`
+        l=`expr $l + 1`
+     done
+     echo '" ]]'
+    }
+
+    array_=`get_array`
+    #echo array_=$array_
+    #echo "`eval ${array_}`"
+
+    #if eval "[[ ${array_} ]]"
+    if [[ "${array_value[0]}" = "YES" ]] && [[ "${array_value[1]}" = "YES" ]] && [[ "${array_value[2]}" = "YES" ]] && [[ "${array_value[3]}" = "YES" ]]
+    then
+      echo "GOOD"
+    else
+      echo "BAD"
+      for num in {0..3}
+      do
+        echo ${array_line[${num}]}
+      done
+    fi
+fi
+

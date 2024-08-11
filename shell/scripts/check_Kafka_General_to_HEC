@@ -1,0 +1,13 @@
+#!/bin/bash
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+
+for hec in `jldsh -eg All_HEC_Confluent_Enterprise_PCF_Kafka_Connect -c $CLUSTER "echo"|sed 's/://g'`
+do
+  echo "HEC $hec ################"
+  for node in `jldsh -eg All_Confluent_Enterprise_PCF_Kafka_Connect_PROD_Cluster -c $CLUSTER "echo"|sed 's/://g'`
+  do
+     #jldsh -ew $hec "nc -vz ser14346some_loc 8088|grep Connect" |grep 'Connection timed out'
+     jldsh -ew $node "nc -vz $hec 8088|grep Connect"
+
+  done
+done

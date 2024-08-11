@@ -1,0 +1,15 @@
+#!/bin/ksh
+################################################################################
+# In order to prevent server.conf's [shclustering] from reverting back to LDAP
+# once SSO SAML configured, set 
+# conf_replication_include.authentication = false
+# Reference:
+# https://answers.splunk.com/answers/766733/saml-integration-on-search-head-cluster.html
+################################################################################
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+date_=$(date '+%a%H%M_%m%d%Y')
+
+#sed -i 's/\[roleMap_SAML\]/&\nuser = apu_53008_splunk_users/' ${SPLUNK_LOCAL}/authentication.conf
+#sed -i 's/\[roleMap_SAML\]/&\npower = apu_53007_splunk_powerusers/' ${SPLUNK_LOCAL}/authentication.conf
+
+sed -i 's/\[settings\]/&\nenable_insecure_login = true/' ${SPLUNK_LOCAL}/web.conf

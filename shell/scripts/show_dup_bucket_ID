@@ -1,0 +1,185 @@
+#!/bin/ksh
+##################################################################################
+# This script generates a report which shows Splunk apps total buckets with 
+# duplicate ID or bucket with duplicate db_newest_oldest. 
+# Usage:
+#        ./show_dup_bucket_ID -a all
+# Output:
+#        ./show_dup_bucket_ID.YYYY-MM-DD_hhmm.OUT
+# For Example:
+#        ./show_dup_bucket_ID.2014-07-03_0930.OUT
+# Note:
+# /var/tmp/show_dup_bucket_ID.YYYY-MM-DD_hhmm.NO_BUCKET shows apps with no bucket 
+# Bucket format: db_[newest_time]_[oldest_time]_[ID]
+##################################################################################
+# user_ | mycorp Data Intelligence 
+SPLUNKINDEX_DATA=/opt/splunkindex_data
+date_=$(date '+%F_%H%M')
+NO_BUCKET=/var/tmp/`basename $0`.${date_}.NO_BUCKET
+
+usage ()
+{
+cat<<END
+
+Usage: $0 [[ -a app1,app2,app3 ]|[ -a all ]]
+
+Where: -a lists app or multiple apps separated by comma (,)
+       -a all (to show all apps)
+
+END
+exit 1
+}
+
+check_for_dups ()
+{
+  bucket_ID_flag=false
+  occurence_db_newest_oldest_flag=false
+
+  if cd ${SPLUNKINDEX_DATA}/${app} 2>/dev/null
+  then
+    if [[ -d $1 ]]
+    then
+       cd ${SPLUNKINDEX_DATA}/${app}/$1 && {
+         ls -d db_* >/dev/null 2>&1
+         if [[ "$?" = "0" ]]
+         then
+           bucket_total=`ls -d db_*|wc -l 2>/dev/null`
+           list=`ls -d db_*|grep -v '.lock'|awk -F"_" '{print $NF}'|sort -n 2>/dev/null`
+           buckets=`ls -d db_*|grep -v '.lock'|sort`
+           # Get list of buckets with newest_oldest
+           buckets_newest_oldest=""
+           for db_newest_oldest in $buckets
+           do
+             # Strip out bucket ID
+             newest_oldest=${db_newest_oldest%_*}
+             buckets_newest_oldest="$buckets_newest_oldest $newest_oldest"
+           done
+           dup_ID=""
+           dup_bucket=""
+           occurence=0
+           # Check Bucket ID first
+           for bucket in $buckets
+           do
+              # Get the bucket ID
+              bucket_ID=${bucket##*_}
+
+              for num in ${list}
+              do
+                # Check bucket ID
+                if [[ $num -eq $bucket_ID ]]
+                then
+                  occurence=$((occurence + 1))
+                  [[ $occurence -gt 1 ]] && {
+                     bucket_ID_flag=true
+                     dup_ID="$dup_ID $bucket"
+                     occurence=0
+                  }
+                else
+                  occurence=0
+                fi
+              done
+           done
+
+           # Check duplicate Bucket db_[newest_time]_[oldest_time]
+           count_db_=0
+           for db_newest_oldest in $buckets_newest_oldest
+           do
+             count_db_=`ls -d ${db_newest_oldest}* |wc -l` 
+             [[ $count_db_ -gt 1 ]] && {
+                 dup_bucket="$dup_bucket $db_newest_oldest"
+                 occurence_db_newest_oldest_flag=true
+             }
+           done
+
+           [[ "$bucket_ID_flag" = "true" ]] || \
+           [[ "$occurence_db_newest_oldest_flag" = "true" ]]&& {
+                # Check if dup_ID > 1 word
+                 [[ `echo $dup_ID|wc -w` -gt 1 ]] && {
+                 echo "--> ${SPLUNKINDEX_DATA}/${app}/$1: (Total buckets: ${bucket_total})"
+                 echo -n "Bucket ID: "
+                 echo ${list}
+                 [[ -n $dup_ID ]] && {
+                    echo
+                    echo "Below shown duplicate bucket ID:"
+                    for dup_id in $dup_ID
+                    do
+                      echo "$dup_id"
+                    done
+                 }
+                 }
+
+                 [[ -n $dup_bucket ]] && {
+                    echo "--> ${SPLUNKINDEX_DATA}/${app}/$1: (Total buckets: ${bucket_total})"
+                    echo -n "Bucket ID: "
+                    echo ${list}
+                    echo
+                    echo "Below shown duplicate bucket db_newest_oldest:"
+                    dup_list=`{
+                    for dup_bkt in $dup_bucket
+                    do
+                      echo "$dup_bkt"
+                    done
+                    } |uniq`
+                    for db_dup in $dup_list
+                    do
+                     cd ${SPLUNKINDEX_DATA}/${app}/$1 && {
+                       ls -d ${db_dup}* 
+                       echo "Results from \`du -s \`:"
+                       du -s ${db_dup}*
+                     }
+                    done
+                 }
+                 echo "*************************************************************"
+           }
+         else
+           echo "${app}: NO_BUCKET_SHOWN" >> ${NO_BUCKET}
+         fi
+       }
+    else
+       echo "${app}: ${SPLUNKINDEX_DATA}/${app}/$1 does not exist." >> ${NO_BUCKET}
+    fi
+  else
+    echo "${app}: ${SPLUNKINDEX_DATA}/${app} does not exist." >> ${NO_BUCKET}
+  fi
+}
+
+#######
+# MAIN
+#######
+{
+clear
+if [[ ! $1 ]]
+then
+  echo -n "Enter app name(s) comma separated (or all)? "
+  read dest
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -a ) dest=$2
+             shift
+             ;;
+      -*|* )
+             usage
+             ;;
+     esac
+     shift
+   done
+fi
+
+# Strip out comma
+dest=${dest//,/ }
+
+[[ "$dest" = "all" ]] && {
+   cd ${SPLUNKINDEX_DATA} && dest=`echo *` 
+}
+
+for app in $dest
+do
+  check_for_dups db
+  check_for_dups colddb
+done
+} | tee `basename $0`.${date_}.OUT
+echo
+echo "OUTPUT: $0.${date_}.OUT"
+

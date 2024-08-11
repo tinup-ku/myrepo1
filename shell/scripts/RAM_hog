@@ -1,0 +1,19 @@
+#!/bin/ksh
+# stress --vm 1 --vm-bytes 512M --vm-hang 100
+build_string() {
+  local pow=$1
+  local dest=$2
+  s=' '
+  for (( i=0; i<pow; i++ )); do
+    s+="$s"
+  done
+  printf -v "$dest" %s "$s"
+}
+
+build_string 10 kilobyte
+# build a string of length 1024
+echo "Kilobyte string consumes ${#kilobyte} bytes"
+
+build_string 20 megabyte
+# build a string of length 1048576
+echo "Megabyte string consumes ${#megabyte} bytes"

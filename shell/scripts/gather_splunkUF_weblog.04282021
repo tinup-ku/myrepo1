@@ -1,0 +1,13 @@
+#!/bin/bash
+{
+while [ 1 ]
+do
+  ip_list=`jldsh -ew s0456some_loc,s0457some_loc,s0662loc2,s0663loc2 "netstat -an|grep ':9990'|grep ESTABLISH|awk '{print \$5}'|awk -F: '{print \$1}'"|awk -F: '{print $2}'|awk '{print $NF}'`
+  for ip in ${ip_list}
+  do
+    host $ip
+  done
+  sleep 5m
+done
+} >> /tmp/splunkUF_1.out
+

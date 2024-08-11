@@ -1,0 +1,140 @@
+#!/bin/bash
+######################################################################################
+# This script performs the followings
+# 1. Install RHEL packages
+#    kernel-headers, glibc-headers,gcc, gdb, zip, unzip, nc, nmap
+# 2. Create splunk LVM (splunklv), File System (/opt/splunk) and update /etc/fstab
+#    Note, each system comes with additional 100GB drive. Since OS drive is either
+#    /dev/sda or /dev/sdb, the script will determine unused drive then configure
+#    /opt/splunk on the other.
+# 3. Update system kernel paramaters to reflect Splunk Support recommendation
+#    . /etc/security/limits.conf,
+#    . /etc/sysctl.conf, and 
+#    . /etc/security/limits.d/20-nproc.conf
+#    . /etc/rc.local to disable Transparent Huge Page (THP)
+######################################################################################
+# Written by user1 | S P L U N K Platform Support
+date_=$(date '+%a%H%M_%m%d%Y')
+
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+{
+echo "1. Installing RHEL pkgs: kernel-headers glibc-headers gcc gdb zip unzip nc nmap"
+yum -ay install kernel-headers
+yum -y install glibc-headers
+yum -y install gcc
+yum -y install gdb
+yum -y install zip
+yum -y install unzip
+yum -y install nc
+yum -y install nmap
+echo "verify RHEL pkgs installed: kernel-headers glibc-headers gcc gdb zip unzip nc nmap"
+rpm -q kernel-headers glibc-headers gcc gdb zip  unzip nc nmap
+
+echo "2. Creating splunk LVM/FS"
+echo "Identifying extra drive and creating splunk LVM/File system and update /etc/fstab"
+OS_drive=`pvs|grep '/dev/sd'|awk '{print $1}'|sed 's/[0-9]//'`
+extra_drive=`fdisk -l|grep '/dev/sd'|grep '^Disk'|grep -v $OS_drive|awk '{print $2}'|sed 's/://g'`
+
+echo "Formatting $extra_drive"
+parted -s ${extra_drive} mklabel gpt
+parted -s -- ${extra_drive} unit GB mkpart primary ext4 0% 100%
+partprobe ${extra_drive}
+parted ${extra_drive} print
+pvcreate -y ${extra_drive}1
+vgcreate splunkvg ${extra_drive}1
+lvcreate -l 100%FREE -n splunklv splunkvg
+# Format the ${extra_drive}
+mkfs.ext4 -E lazy_itable_init=1 /dev/splunkvg/splunklv
+
+echo "Updating /etc/fstab"
+sed -i '$a/dev/splunkvg/splunklv /opt/splunk ext4    defaults        0 0' /etc/fstab
+echo "Mounting /opt/splunk"
+[[ ! -d /opt/splunk ]] && mkdir /opt/splunk
+
+mount /opt/splunk
+
+
+echo "3. Updating /etc/security/limits.conf,/etc/sysctl.conf, and /etc/security/limits.d/20-nproc.conf" 
+# Set up splunk parameters
+# 1. /etc/security/limits.conf
+mv -f /etc/security/limits.conf /etc/security/limits.conf.ORIG
+{
+cat /etc/security/limits.conf.ORIG
+cat<<END_
+# Begin Splunk Settings
+*     soft    nofile  262144
+*     hard    nofile  262144
+# End Splunk Settings
+END_
+}>/var/tmp/limits.$$
+
+mv -f /var/tmp/limits.$$ /etc/security/limits.conf
+
+# 2. /etc/sysctl.conf
+mv -f /etc/sysctl.conf /etc/sysctl.conf.ORIG
+{
+cat /etc/sysctl.conf.ORIG
+cat<<END__
+# Begin Splunk Settings
+fs.file-max = 2048000
+# End Splunk Settings
+END__
+} > /var/tmp/sysctl.conf.$$
+
+mv -f /var/tmp/sysctl.conf.$$ /etc/sysctl.conf
+sysctl -p
+
+# 3. /etc/security/limits.d/20-nproc.conf: nproc set to 131072 per Splunk's recommendation.
+echo
+echo "Updating /etc/security/limits.d/20-nproc.conf"
+{
+cat<<END
+# Default limit for number of user's processes to prevent
+# accidental fork bombs.
+# See rhbz #432903 for reasoning.
+
+*          soft    nproc     131072
+*          hard    nproc     131072
+root       soft    nproc     unlimited
+END
+} > /etc/security/limits.d/20-nproc.conf
+
+chmod 644 /etc/security/limits.d/20-nproc.conf
+
+
+# Splunk recommends to turn off Transparent Huge Pages (THP).
+echo "4. Turn off Transparent Huge Page"
+
+[ -f /etc/rc.d/rc.local ] && {
+  /bin/cp -p /etc/rc.d/rc.local /etc/rc.d/ORIG.rc.local
+  {
+    cat /etc/rc.d/ORIG.rc.local
+    cat<<EOF
+
+# This has a profound impact on system load. There's a decent Oracle Blog 
+# about it at 
+# https://blogs.oracle.com/linux/entry/performance_issues_with_transparent_huge. 
+# http://answers.splunk.com/answers/112305/on-rh-6-and-splunk-6-my-searches-are-consuming-lots-of-cpu
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+EOF
+  } > /var/tmp/rc.local.$$
+/bin/mv -f /var/tmp/rc.local.$$ /etc/rc.d/rc.local
+chmod +x /etc/rc.d/rc.local
+/etc/rc.d/rc.local
+
+echo "Validating THP turned off, ie, 'never'"
+cat /sys/kernel/mm/transparent_hugepage/enabled
+cat /sys/kernel/mm/transparent_hugepage/defrag
+}
+
+echo "Next,"
+echo "1.  mount share_server.dev.mycorp.com:/infra/loc /mnt "
+echo "2. ./install_splunk.systemD -v 9.1.3"
+echo
+} | tee /root/initial_splunk_setup.${date_}

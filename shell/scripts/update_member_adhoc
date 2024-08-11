@@ -1,0 +1,17 @@
+#!/bin/bash
+# Add the following to server.conf's [shclustering] stanza to ALL 22 members.
+# [shclustering]
+# captain_is_adhoc_searchhead = true
+#
+# Scheduled – splunk.mycorp.com.  9/26 – these will actually be the ad hoc only.
+#
+# http://docs.splunk.com/Documentation/Splunk/6.6.3/DistSearch/Adhocclustermember
+
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+
+cd ${SPLUNK_LOCAL} && {
+  [[ -f server.conf ]] && {
+    grep '^captain_is_adhoc_searchhead' server.conf > /dev/null
+    [[ "$?" != "0" ]] && sed -i '/\[shclustering/acaptain_is_adhoc_searchhead = true' server.conf 
+  }
+}

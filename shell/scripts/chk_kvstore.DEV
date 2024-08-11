@@ -1,0 +1,9 @@
+#!/bin/ksh
+SPLUNK_BIN=/opt/splunk/bin
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+${SPLUNK_BIN}/splunk login -auth admin:$dev
+
+# Get a list of all Search peers
+/opt/splunk/bin/splunk show kvstore-status|grep status

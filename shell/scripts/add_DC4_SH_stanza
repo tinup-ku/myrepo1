@@ -1,0 +1,71 @@
+#!/bin/bash
+#############################################################################
+# This script is to point Splunk Search Head or Search Head Cluster to 
+# additional Index Cluster Master (CM). 
+# - If a Search Head is at PDC1/3, point to splunkmasternode-loc5.mycorp.com
+# - If a Search Head is at DC4, point to splunkmasternode.mycorp.com
+# Script's based on 
+# https://docs.splunk.com/Documentation/Splunk/8.0.1/Indexer/Configuremulti-clustersearch
+# Note: 
+# Once server.conf updated,
+# - If standalone Search Head, restart splunk.
+# - If Search Head Cluster, perform rolling restart.
+# - To verify, on https://splunk-preprod.mycorp.com, run
+#   index=_internal | stats count by splunk_server
+# Should see 120 Indexers@PDC1/3 and 20 Indexers@DC4.
+#############################################################################
+# Written By user1 P. user1 | Team
+SERVER_CONF=/opt/splunk/etc/system/local/server.conf
+date_=`date '+%Y%m%d'`
+
+# Backup $SERVER_CONF
+cp -f ${SERVER_CONF} ${SERVER_CONF}.${date_}
+
+# 1. Add a blank line at the EOF
+sed -i '$a\\n' ${SERVER_CONF}
+
+# 2. Find [clustering] stanza, and insert the following stanza above it.
+# ---BEGIN ---
+#[clustering_TEMP]
+#mode = searchhead
+#master_uri = clustermaster:PDC1, clustermaster:DC4
+#
+# ---END ---
+
+sed -i '/\[clustering/i \[clustering_TEMP\]\nmode = searchhead\nmaster_uri = clustermaster:PDC1, clustermaster:DC4\n' ${SERVER_CONF}
+
+# 3. Rename [clustering] to [clustermaster:PDC1]
+case `uname -n` in
+   *some_loc | *loc2 )
+                sed -i 's/\[clustering\]/\[clustermaster:PDC1\]/g' ${SERVER_CONF}
+                ;;
+          *loc3 )
+                sed -i 's/\[clustering\]/\[clustermaster:DC4\]/g' ${SERVER_CONF}
+                ;;
+esac
+
+# 4. Add either PDC1 or DC4 stanza
+case `uname -n` in
+          *loc3 )
+                cat<<END >> ${SERVER_CONF}
+[clustermaster:PDC1]
+master_uri = https://splunkmasternode.mycorp.com:8089
+mode = searchhead
+multisite = true
+pass4SymmKey = prodcluster
+END
+                ;;
+   *some_loc | *loc2 )
+                cat<<END >> ${SERVER_CONF}
+[clustermaster:DC4]
+master_uri = https://splunkmasternode-loc5.mycorp.com:8089
+mode = searchhead
+multisite = true
+pass4SymmKey = prodcluster-loc5
+
+END
+                ;;
+esac
+
+# Rename [clustering_TEMP] to [clustering]
+sed -i 's/\[clustering_TEMP\]/\[clustering\]/g' ${SERVER_CONF}

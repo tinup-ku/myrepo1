@@ -1,0 +1,5 @@
+#!/bin/ksh
+
+Splunk_pid=`systemctl status Splunkd|grep Main|awk '{print $3}'`
+echo -n "(Splunk PID ${Splunk_pid}):"
+grep '^Max core file size' /proc/${Splunk_pid}/limits|sed 's/       //g'

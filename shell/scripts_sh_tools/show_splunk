@@ -1,0 +1,121 @@
+#!/bin/ksh
+
+####################################################
+#                                                  #
+#  $Id: show_splunk,v 1.0 2011/06/11 Exp $#
+#  Show Splunk Processes	                   #
+#  Authors: Carlos R. Martinez                     #
+#                                                  #
+####################################################
+
+uname -sn |read OS SERVER
+PROG_NAME=${0##*/}
+REV="1.0"
+REV="$Revision: 1.0 $"
+REV=${REV%$}      # strip the last $
+DATE=`date "+%a %d %H:%M %Y"`
+
+# Splunk Service account:
+#svc_act1:VAS:500327:9998:svc_act1:/svc_act1:/bin/ksh
+#svc_act2:VAS:562314:60231:svc_act2:/svc_act2:/bin/ksh
+
+env_=`uname -n`
+typeset -R3 env_
+
+case ${env_} in
+   pdv | bdv ) UID=562314
+               ;;
+   some_loc | loc2 ) UID=500327
+               ;;
+esac
+
+case $OS in
+
+   Linux)   GREP="grep"
+   ;;
+
+esac
+
+## Processes
+
+SPLUNK_process=`ps -eo euser,pid,etime,pcpu,pmem,args|grep [s]plunk|grep -v root`
+
+##
+
+check() {
+
+  echo "# $DATE $PROG_NAME: version: $REV"
+  echo
+  echo "# $PROG_NAME for $SERVER:"
+  printf '%-15s %-10s %-6s %-12s %-20s %-4s %-4s\n' "# Process" "Status" "USER " "  PID" "Age(dd-hh:mm:ss)" "%CPU" "%MEM"
+  printf '%-15s %-10s %-6s %-12s %-20s %-4s %-4s\n' "---------" "------" "---- " "  ---" "----------------" "----" "----"
+
+  if [[ ! -z $SPLUNK_process ]]; then
+    echo "${SPLUNK_process}" | while read euser pid etime cpu mem args
+    do
+      printf '%-15s %-10s %-6s %-10s %-20s %-4s %-4s\n' "# splunkd:" "UP" "${euser}" "${pid}" "${etime}" "${cpu}" "${mem}"
+    done
+  else
+    printf '%-15s %-10s\n' "# splunkd:" "DOWN"
+  fi
+  echo
+}
+
+zenoss() {
+
+if [[ ! -z  $SPLUNK_process ]]; then
+  echo "OK"
+  printf '%-3s %-1s %-10s\n' "# OK | splunkd is UP"
+else
+  echo "ERROR"
+  printf '%-3s %-1s %-10s\n' "# ERROR | splunkd is DOWN" 
+fi
+
+}
+
+check_default() {
+
+ print "$DATE $PROG_NAME: version: $REV\n"
+ print "$PROG_NAME for $SERVER:"
+ printf '%-15s %-10s\n' "Process" "Status"
+
+
+  ## SPLUNK
+  if [[ ! -z $SPLUNK_process ]]; then
+    printf '%-15s %-10s\n' "SPLUNK:" "UP"
+  else 
+    printf '%-15s %-10s\n' "SPLUNK:" "DOWN"
+  fi
+}
+
+usage() {
+
+cat<<++
+Invalid Option!!!
+USAGE:  show_splunk [-s]|[-z]
+
+  where
+        -s = shows splunk status, euser, pid, age(etime), %cpu & %mem
+        -z = shows splunk status for Zenoss
+
+++
+
+}
+
+options() {
+
+   case $1 in
+      -s) check;; 
+      -z ) zenoss;; 
+       *) usage;;
+   esac
+
+}
+
+if [ $# -eq 0 ]
+then
+   check_default
+elif [ $# -eq 1 ]
+then
+   options $1
+fi

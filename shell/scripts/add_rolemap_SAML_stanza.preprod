@@ -1,0 +1,14 @@
+#!/bin/ksh
+
+cat<<END >> /opt/splunk/etc/system/local/authentication.conf
+
+[roleMap_SAML]
+admin = apu_53013_splunk_admin
+power = apu_53007_splunk_powerusers
+user = apu_53008_splunk_users
+
+END
+
+sed -i 's/signedAssertion = true/signedAssertion = false/g' /opt/splunk/etc/system/local/authentication.conf
+
+chown ser_act.prod /opt/splunk/etc/system/local/authentication.conf

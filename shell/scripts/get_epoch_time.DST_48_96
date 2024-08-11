@@ -1,0 +1,132 @@
+#!/bin/bash
+
+echo -n "Enter date in MM/DD/YYYY (for example, 10/12/2019)? "
+read yyyymmdd
+echo
+year=`echo ${yyyymmdd}|awk -F/ '{print $NF}'`
+month=`echo ${yyyymmdd}|awk -F/ '{print $1}'`
+day=`echo ${yyyymmdd}|awk -F/ '{print $2}'`
+
+
+echo -n "How many output files (1|2|4|6|8|12|24|48|96)? "
+read number
+remainder=`expr 96 % ${number}`
+if [[ "${remainder}" != "0" ]]
+then
+     echo "The number, $number, is invalid. Try again."
+     exit
+fi
+
+{
+
+case ${number} in
+     1 )
+         echo -n "Enter Start time in Military format (17:30:00)? "
+         read start
+         echo -n "Enter Start time in Military format (23:30:00)? " 
+         read end
+         start_one=`date --date="${yyyymmdd} ${start}" +"%s"`
+         end_one=`date --date="${yyyymmdd} ${end}" +"%s"`
+         echo "$start_one,$end_one"
+         ;;
+     2|3|4|6|8|12|24 )
+         first_num=`expr 24 / $number`
+         last_num=`expr 24 - $first_num`
+         start_one=`date --date="${yyyymmdd} 00:00:00" +"%s"`
+         previous=$start_one
+         for num in `seq $first_num $first_num $last_num`
+         do
+           date --date="${yyyymmdd} $num:00:00" +"%s" >/dev/null 2>&1
+           if [[ "$?"  = "0" ]]
+           then
+              next=`date --date="${yyyymmdd} $num:00:00" +"%s"`
+              echo "${previous},${next}"
+           else
+              # The followings are to handle Daylight Saving Time (DST)
+              # 
+              num=`expr $num - 1`
+              [[ "${number}" = 12 ]] &&  echo -n "${previous}"
+           fi
+           previous=$next
+         done  
+         last=`date --date="${yyyymmdd} 23:59:59" +"%s"`
+         # Add 1 to make it top of the hour.
+         last=`expr $last + 1`
+         echo "${previous},${last}"
+         ;;
+     48 )
+         first_num=1
+         last_num=23
+         start_one=`date --date="${yyyymmdd} 00:00:00" +"%s"`
+         start_one_half=`date --date="${yyyymmdd} 00:30" +"%s"`
+         previous=$start_one_half
+         echo "${year}${month}${day},$start_one,$start_one_half"
+         for num in `seq $first_num $first_num $last_num`
+         do
+           date --date="${yyyymmdd} $num:00:00" +"%s" >/dev/null 2>&1
+           if [[ "$?"  = "0" ]]
+           then
+              next=`date --date="${yyyymmdd} $num:00:00" +"%s"`
+              next_half=`date --date="${yyyymmdd} $num:30:00" +"%s"`
+              echo "${year}${month}${day},${previous},${next}"
+              echo "${year}${month}${day},${next},${next_half}"
+           else
+              # The followings are to handle Daylight Saving Time (DST)
+              #
+              num=`expr $num - 1`
+              [[ "${number}" = 12 ]] &&  echo -n "${previous}"
+           fi
+           previous=$next_half
+         done
+         last=`date --date="${yyyymmdd} 23:59:59" +"%s"`
+         # Add 1 to make it top of the hour.
+         last=`expr $last + 1`
+         echo "${year}${month}${day},${previous},${last}"
+         ;;
+     96 )
+         first_num=1
+         last_num=23
+         start_one=`date --date="${yyyymmdd} 00:00:00" +"%s"`
+         start_one_quarter=`date --date="${yyyymmdd} 00:15:00" +"%s"`
+         start_one_half=`date --date="${yyyymmdd} 00:30" +"%s"`
+         start_three_quarter=`date --date="${yyyymmdd} 00:45" +"%s"`
+         previous=$start_three_quarter
+         echo "${year}${month}${day},$start_one,$start_one_quarter"
+         echo "${year}${month}${day},$start_one_quarter,$start_one_half"
+         echo "${year}${month}${day},$start_one_half,$start_three_quarter"
+         for num in `seq $first_num $first_num $last_num`
+         do
+           date --date="${yyyymmdd} $num:00:00" +"%s" >/dev/null 2>&1
+           if [[ "$?"  = "0" ]]
+           then
+              next=`date --date="${yyyymmdd} $num:00:00" +"%s"`
+              next_quarter=`date --date="${yyyymmdd} $num:15:00" +"%s"`
+              next_half=`date --date="${yyyymmdd} $num:30:00" +"%s"`
+              next_three_quarter=`date --date="${yyyymmdd} $num:45:00" +"%s"`
+              echo "${year}${month}${day},${previous},${next}"
+              echo "${year}${month}${day},${next},${next_quarter}"
+              echo "${year}${month}${day},${next_quarter},${next_half}"
+              echo "${year}${month}${day},${next_half},${next_three_quarter}"
+           else
+              # The followings are to handle Daylight Saving Time (DST)
+              #
+              num=`expr $num - 1`
+              [[ "${number}" = 12 ]] &&  echo -n "${previous}"
+           fi
+           previous=$next_three_quarter
+         done
+         last=`date --date="${yyyymmdd} 23:59:59" +"%s"`
+         # Add 1 to make it top of the hour.
+         last=`expr $last + 1`
+         echo "${year}${month}${day},${previous},${last}"
+         ;;
+     * )
+         echo "Wrong choice. Try again."
+         exit
+         ;;
+esac
+} | tee /tmp/`basename $0`.OUT
+echo
+echo "Total number of files: $(wc -l /tmp/`basename $0`.OUT|awk '{print $1}')"
+#[root@ser10966some_loc scripts]# awk -F, '{printf"%s %s\n",$2,$3}' /tmp/epoch.txt|while read one two; do echo -n "`date -d @${one}`"; echo " | `date -d @${two}`"; done
+

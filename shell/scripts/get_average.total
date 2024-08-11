@@ -1,0 +1,56 @@
+#!/bin/ksh
+typeset -i col_3 col_4 col_5 
+typeset -i total_3 total_4 total_5
+typeset -i line_
+line_=0
+ls out* >/dev/null 2>&1
+[[ "$?" = "0" ]] && \
+{
+cat out*| bon_csv2txt| grep '71789M'|while read line
+do
+  Seqential_Output_Block_KB_per_second=`echo $line|awk '{print $3}'`
+  Seqential_Output_Block_percent_CPU=`echo $line|awk '{print $4}`
+  Seqential_Output_Rewrite_KB_per_second=`echo $line|awk '{print $5}`
+  Seqential_Output_Rewrite_percent_CPU=`echo $line|awk '{print $6}`
+
+  Seqential_Input_Block_KB_per_second=`echo $line|awk '{print $7}'`
+  Seqential_Input_Block_percent_CPU=`echo $line|awk '{print $8}'`
+
+  Random_Seeks_IOPS=`echo $line|awk '{print $9}'`
+  Random_Seeks_percent_CPU=`echo $line|awk '{print $10}'`
+
+  col_3=`echo ${Seqential_Output_Block_KB_per_second}`
+  col_4=`echo ${Seqential_Output_Block_percent_CPU}`
+  col_5=`echo ${Seqential_Output_Rewrite_KB_per_second}`
+  col_6=`echo ${Seqential_Output_Rewrite_percent_CPU}`
+
+  col_7=`echo ${Seqential_Input_Block_KB_per_second}`
+  col_8=`echo ${Seqential_Input_Block_percent_CPU}`
+
+  col_9=`echo ${Random_Seeks_IOPS}`
+  col_10=`echo ${Random_Seeks_percent_CPU}`
+
+  #echo "$col_3 $col_4 $col_5 $col_6 $col_7 $col_8 $col_9 $col_10"
+  total_3=$(($total_3 + $col_3))
+  total_4=$(($total_4 + $col_4))
+  total_5=$(($total_5 + $col_5))
+  total_6=$(($total_6 + $col_6))
+  total_7=$(($total_7 + $col_7))
+  total_8=$(($total_8 + $col_8))
+  total_9=$(($total_9 + $col_9))
+  total_10=$(($total_10 + $col_10))
+  line_=$(($line_+ 1))
+
+done
+}
+
+ave_total_3=$(($total_3 / $line_))
+ave_total_4=$(($total_4 / $line_))
+ave_total_5=$(($total_5 / $line_))
+ave_total_6=$(($total_6 / $line_))
+ave_total_7=$(($total_7 / $line_))
+ave_total_8=$(($total_8 / $line_))
+ave_total_10=$(($total_10 / $line_))
+#echo "$ave_total_3 $ave_total_4 $ave_total_5 $ave_total_6 $ave_total_7 $ave_total_8 $total_9 $ave_total_10"
+echo -e "$ave_total_3\n$ave_total_4\n$ave_total_5\n$ave_total_6\n$ave_total_7\n$ave_total_8\n$total_9\n$ave_total_10"
+

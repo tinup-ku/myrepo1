@@ -1,0 +1,8 @@
+#!/bin/bash
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+echo
+jldsh -c $CLUSTER -eg splunk_Adhoc_SH_cluster "cd /opt/splunk/var/log/splunk;ls -l splunkd.log"
+echo
+echo "splunkd processes currently running on splunk_Adhoc_SH_cluster:"
+jldsh -c $CLUSTER -eg splunk_Adhoc_SH_cluster "pgrep splunkd|wc -l"
+

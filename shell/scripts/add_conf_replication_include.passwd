@@ -1,0 +1,14 @@
+#!/bin/bash
+#sed -i '$a\\n\[license\]\nmaster_uri = https://ser14189some_loc.some_loc.mycorp.com:8089\n' /opt/splunk/etc/system/local/server.conf
+
+cd /opt/splunk/etc/system/local && {
+   grep '^conf_replication_include.passwd' server.conf >/dev/null
+   if [[ "$?" != "0" ]]
+   then
+      echo "Need to add 'conf_replication_include.passwd = false' to server.conf"
+      sed -i '/\[shclustering/a conf_replication_include.passwd = false' server.conf
+   else
+      echo "GOOD"
+   fi
+}
+        

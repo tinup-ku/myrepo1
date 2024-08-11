@@ -1,0 +1,2 @@
+
+sg_write_long -w -l 16384 /dev/sdb1

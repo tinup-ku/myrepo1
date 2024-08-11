@@ -1,0 +1,21 @@
+#!/bin/bash
+
+ifconfig -a|grep -A1 Team|grep broadcast >/dev/null 2>&1
+if [[ "$?" = "0" ]]
+then
+  ifconfig -a|grep -A1 Team|grep broadcast|while read line
+  do
+    IP=`echo $line|awk '{print $2}'`
+    netmask=`echo $line|awk '{print $4}'`
+    Network=`ipcalc ${IP}/${netmask}|grep ^Network`
+    echo $Network
+  done
+else
+    ifconfig|grep broadcast|while read line
+    do
+        IP=`echo $line|awk '{print $2}'`
+        netmask=`echo $line|awk '{print $4}'`
+        CIDR=$(ipcalc ${IP}/${netmask}|grep '^Network'|awk '{print $NF}')
+        echo $CIDR
+    done
+fi

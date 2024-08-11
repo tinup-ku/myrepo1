@@ -1,0 +1,81 @@
+#!/bin/bash
+SPLUNK_BIN=/opt/splunk/bin
+green=$(tput setaf 2)
+reset_color="\e[0m"
+
+rotate_char() {
+   chars=( '←' '↑' '→' '↓' )
+   for sec in {1..60}
+   do
+     echo -ne "${green}${chars[i++ % ${#chars[@]}]}"
+     sleep 1
+     echo -ne "\b${reset_color}"
+   done
+}
+
+
+# Indexers are seen from cluster master
+indexer_count=$(${SPLUNK_BIN}/splunk show cluster-status --verbose 2>/dev/null |awk '/Splunk version peer count/{print $8}')
+echo
+echo indexer_count=$indexer_count
+
+# Cluster Master status. This can be
+# cluster_status=None
+# cluster_status=Bundle reload is in progress. Waiting all peers to return the status.
+# cluster_status=Rolling restart of the peers is in progress.
+get_cluster_status ()
+{
+  cluster_status=$(${SPLUNK_BIN}/splunk show cluster-bundle-status 2>/dev/null|grep -A1 master|awk -F= '/cluster_status/{print $NF}'|sed 's/[[:blank:]]*$//')
+  echo cluster_status=$cluster_status
+}
+
+active_bundle_checksum=$(${SPLUNK_BIN}/splunk show cluster-bundle-status 2>/dev/null| grep -A3 master|grep -A1 active_bundle|awk -F= '/checksum/{print $NF}'|sed 's/[[:blank:]]*$//')
+echo active_bundle_checksum=$active_bundle_checksum
+
+latest_bundle_checksum=$(${SPLUNK_BIN}/splunk show cluster-bundle-status 2>/dev/null| grep -A6 master|grep -A1 latest_bundle|awk -F= '/checksum/{print $NF}'|sed 's/[[:blank:]]*$//')
+echo latest_bundle_checksum=$latest_bundle_checksum
+
+last_validated_bundle_checksum=$(${SPLUNK_BIN}/splunk show cluster-bundle-status 2>/dev/null| grep -A9 master|grep -A1 last_validated_bundle|awk -F= '/checksum/{print $NF}'|sed 's/[[:blank:]]*$//')
+echo last_validated_bundle_checksum=$last_validated_bundle_checksum
+
+get_indexer_latest_bundle_checksum_count ()
+{
+  indexer_latest_bundle_checksum_count=$(${SPLUNK_BIN}/splunk show cluster-bundle-status 2>/dev/null| grep -c "active_bundle=${latest_bundle_checksum}")
+  echo indexer_latest_bundle_checksum_count=$indexer_latest_bundle_checksum_count
+}
+
+get_cluster_status
+get_indexer_latest_bundle_checksum_count
+
+
+if [[ "${cluster_status}" = "None" ]] && [[ "${indexer_latest_bundle_checksum_count}" = "${indexer_count}" ]] && \
+	[[ "${latest_bundle_checksum}" = "${last_validated_bundle_checksum}" ]]
+then
+	echo "New bundle with checksum ${last_validated_bundle_checksum} validated."
+else
+	# Getting cluster_status
+        minutes_count=0
+	while [[ $(${SPLUNK_BIN}/splunk show cluster-bundle-status 2>/dev/null|grep -A1 master|awk -F= '/cluster_status/{print $NF}'|sed 's/[[:blank:]]*$//') != "None" ]]
+	do
+		get_cluster_status
+		current_index_count=`get_indexer_latest_bundle_checksum_count`
+		if [[ "${current_index_count}" != "${indexer_count}" ]]
+		then
+			echo -n "Let's wait for 60 seconds... "
+			rotate_char
+			# Check count again
+			current_index_count=`get_indexer_latest_bundle_checksum_count`
+			minutes_count=`expr ${minutes_count} + 1`
+			if [[ ${minutes_count} != "3" ]]
+		        then
+		           continue
+		        else
+			   echo " 3 minutes UP. Exit"
+			   exit
+		        fi
+		fi
+	done
+
+    echo "Please run your steps again as described in"
+    echo "https://confluence.mycorp.com/display/TOS/Splunk+-+How+to+%3A+PROD+-+Indexer+Apps+Maintenance+-+process+not+using+ant+build" 
+fi

@@ -1,0 +1,3 @@
+#!/bin/ksh
+# jldsh -eg splunk_multisite_SH -s ./check_splunk_admin_login
+su - ser_act.prod -c '/opt/splunk/bin/splunk login -auth admin:<pass>'
