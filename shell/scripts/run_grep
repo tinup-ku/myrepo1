@@ -1,9 +1,0 @@
-#!/bin/ksh
-SPLUNK_HOME=/opt/splunk
-{
-while [ 1 ]
-do
-  cd $SPLUNK_HOME/var/run/splunk/dispatch; grep -r --include='search.log*' -lZ "Received socket error. Processing remaining bytes=" | xargs -r --null -I{} sh -c 'touch $(dirname {})/save'
- sleep 180
-done
-}  >> /var/tmp/run_grep.OUT

@@ -1,1 +1,0 @@
-jldsh -eg All_splunk_multisite_SH -ew s0171loc3,s0172loc3,s0173loc3,s0174loc3,s0175loc3,s0176loc3,s0189loc3,s0190loc3,s0191loc3,s0192loc3,s0193loc3,s0166loc3,s0167loc3,s0168loc3,s0169loc3,s0170loc3,s0184loc3,s0185loc3,s0186loc3,s0187loc3,s0188loc3 "clean_up_local_SCH_apps SCH_START_app"

@@ -1,6 +1,0 @@
-#!/bin/bash
-
-NIC=$(ifconfig -a|grep 'UP,BROADCAST,RUNNING,MULTICAST'|awk -F: '{print $1}')
-ifconfig ${NIC}|grep packets
-ethtool ${NIC}|grep Speed
-echo

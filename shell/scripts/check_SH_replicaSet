@@ -1,4 +1,0 @@
-#!/bin/ksh
-# Run on ser14189some_loc:/root/scripts
-# jldsh -eg splunk_multisite_SH -s ./check_SH_replicaSet
-su - ser_act.prod -c '/opt/splunk/bin/splunk login -auth admin:`uname -n`_admin;/opt/splunk/bin/splunk show kvstore-status|egrep "replicaSet|status"'

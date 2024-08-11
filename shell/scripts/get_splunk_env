@@ -1,4 +1,0 @@
-#!/bin/ksh
-{
-eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
-} 2>/dev/null

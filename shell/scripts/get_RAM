@@ -1,3 +1,0 @@
-#!/bin/bash
-RAM=`grep MemT /proc/meminfo|awk '{$2/=1048576;printf "%.2fG\n",$2}'`
-echo $RAM

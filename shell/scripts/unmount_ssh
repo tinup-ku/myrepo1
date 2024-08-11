@@ -1,6 +1,0 @@
-#!/bin/bash
-for mnt_pnt in `mount|awk '/ssh-keys/{print $3}'`
-do
-  echo "Unmount $mnt_pnt"
-  umount -l $mnt_pnt
-done

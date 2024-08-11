@@ -1,7 +1,0 @@
-#!/bin/ksh
-#nohup df /ELI >/dev/null 2>&1 &
-# PID=$!
-# sleep 3s
-# check ${PID}/
-df /ELI >/dev/null 2>&1
-[[ "$?" != "0" ]] && echo "Problem with NAS /ELI"

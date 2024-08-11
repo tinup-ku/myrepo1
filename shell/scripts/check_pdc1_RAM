@@ -1,2 +1,0 @@
-#!/bin/ksh
-jldsh -eg splunk_pdc1 "ps -eo pmem,pcpu,rss,vsize,args | sort -k 1 -r |head -5"|dshbak

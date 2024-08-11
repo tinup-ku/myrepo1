@@ -1,5 +1,0 @@
-#!/bin/bash
-
-cd /opt/splunk/etc/system/local && {
- sed -i.11102022 's/\[shclustering\]/&\nconf_replication_include.ui-prefs = false\nconf_replication_include.user-prefs = false/' server.conf
-}

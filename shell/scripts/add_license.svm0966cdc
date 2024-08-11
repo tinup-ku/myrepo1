@@ -1,3 +1,0 @@
-#!/bin/bash
-sed -i '$a\\n\[license\]\nmaster_uri = https://ser10966some_loc.some_loc.mycorp.com:8089\n' /opt/splunk/etc/system/local/server.conf
-

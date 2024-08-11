@@ -1,2 +1,0 @@
-#!/bin/bash
-jldsh -eg splunk_multisite_SH "cd /opt/splunk/etc; /bin/mv users users.BACKUP;/bin/mv users_tmp users;chown -R ser_act.prod:unx_9998_access users;stop_splunk;start_splunk"

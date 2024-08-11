@@ -1,6 +1,0 @@
-#!/bin/ksh
-SPLUNK_BIN=/opt/splunk/bin
-{
-eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
-} 2>/dev/null
-su - ser_act.dev -c "${SPLUNK_BIN}/splunk login -auth admin:$dev;${SPLUNK_BIN}/splunk show shcluster-status"

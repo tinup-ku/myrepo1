@@ -1,7 +1,0 @@
-#!/bin/ksh
-
-cd /opt/splunk/var/run/splunk/snapshot && {
-  latest_bundle=`ls -ltr|tail -1|awk '{print $NF}'`
-  find . -type f ! -newer ${latest_bundle} -exec ls -l {} +
-}
-

@@ -1,2 +1,0 @@
-#!/bin/bash
-jldsh -eg All_Indexers_cluster "systemctl restart goferd"

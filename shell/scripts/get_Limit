@@ -1,3 +1,0 @@
-#!/bin/ksh
-Main_PID=$(systemctl status Splunkd|awk '/Main PID/{print $3}')
-grep -A1 'Max processes' /proc/$Main_PID/limits

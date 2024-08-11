@@ -1,4 +1,0 @@
-#!/bin/ksh
-
-main_splunk_PID=`systemctl status Splunkd|grep 'Main PID'|awk '{print $3}'`
-grep 'Max open files' /proc/${main_splunk_PID}/limits

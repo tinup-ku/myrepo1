@@ -1,8 +1,0 @@
-#!/bin/ksh
-for pid in `pgrep splunkd`
-do
-  echo -n "splunkd PID: $pid --> "
-  grep VmSwap /proc/${pid}/status
-done
-echo
-free

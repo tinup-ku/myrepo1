@@ -1,5 +1,0 @@
-#!/bin/bash
-
-cd /opt/splunk/etc/system/local && {
- sed -i.11072022_1 's/\[shclustering\]/&\ncxn_timeout = 120\nsend_timeout = 120\nrcv_timeout = 120/' server.conf
-}

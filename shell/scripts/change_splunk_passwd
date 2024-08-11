@@ -1,3 +1,0 @@
-#!/bin/ksh
-
-su - ser_act.prod -c "/opt/splunk/bin/splunk login -auth admin:changeme;/opt/splunk/bin/splunk edit user admin -password `uname -n`_admin"

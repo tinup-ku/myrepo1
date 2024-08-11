@@ -1,9 +1,0 @@
-#!/bin/ksh
-{
-eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
-} 2>/dev/null
-
-captain=`su - ser_act.dev -c "/opt/splunk/bin/splunk list shcluster-members -auth admin:${dev}|grep -A1 'is_captain:1'|tail -1"|awk -F: '{print $2}'`
-echo "$captain"
-
-

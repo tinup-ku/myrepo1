@@ -1,6 +1,0 @@
-#!/bin/bash
-root_cold_disk=`pvs|awk '/rootvg/ || /coldvg/{print $1}'`
-root_cold_disk=`echo $root_cold_disk|sed 's/ /|/g'`
-echo root_cold_disk=$root_cold_disk
-hot_SSD=`pvs|egrep -v "${root_cold_disk}|PV"|awk '{print $1}'`
-echo hot_SSD=$hot_SSD
