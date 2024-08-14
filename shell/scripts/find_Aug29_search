@@ -1,2 +1,0 @@
-#!/bin/bash
-ps -ef|grep [s]plunk|grep search|grep Oct29|awk '{print $2}'

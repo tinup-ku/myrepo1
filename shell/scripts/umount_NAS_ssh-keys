@@ -1,8 +1,0 @@
-#!/bin/bash
-awk '/\/ssh-keys/{print $2}' /proc/mounts|grep '/ssh-keys'  >/dev/null 2>&1
-[[ "$?" = "0" ]] && {
-  echo "unmount current NAS NFS mount point /ssh-keys/: "
-  awk '/\/ssh-keys/{print $2}' /proc/mounts
-  awk '/\/ssh-keys/{print $2}' /proc/mounts|xargs umount -l >/dev/null 2>&1
-}
-

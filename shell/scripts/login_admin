@@ -1,4 +1,0 @@
-#!/bin/ksh
-
-#su - ser_act.prod -c "/opt/splunk/bin/splunk login -auth admin:`uname -n`_admin"
-/opt/splunk/bin/splunk login -auth admin:`uname -n`_admin

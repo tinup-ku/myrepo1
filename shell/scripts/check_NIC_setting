@@ -1,2 +1,0 @@
-#!/bin/ksh
-ethtool `teamdctl Team0 state|grep 'active port'|awk -F: '{print $NF}'`|grep Speed

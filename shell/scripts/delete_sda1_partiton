@@ -1,9 +1,0 @@
-#!/bin/bash
-# IF u don't know, DO NOT RUN.
-fdisk /dev/sda <<EOF
-d
-p
-1
-
-w
-EOF

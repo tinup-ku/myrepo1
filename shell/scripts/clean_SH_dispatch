@@ -1,6 +1,0 @@
-#!/bin/ksh
-SPLUNK_HOME=/opt/splunk
-DISP=$SPLUNK_HOME/var/run/splunk/dispatch
-mkdir -p $DISP/_deleteme
-find "$DISP" -maxdepth 2 -name cancel -exec ls -d {} + |wc -l 
-#find "$DISP" -maxdepth 2 -name cancel -exec bash -c 'mv `dirname "{}"` "'$DISP'"/_deleteme' \;

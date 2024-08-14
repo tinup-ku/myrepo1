@@ -1,5 +1,0 @@
-#!/bin/bash
-
-cd /opt/splunk/etc/system/local && {
- sed -i.11112022 's/\[search\]/&\n#Splunk_case_3094729\nasync_saved_search_fetch=true/' limits.conf
-}

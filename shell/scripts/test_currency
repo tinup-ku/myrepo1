@@ -1,4 +1,0 @@
-#!/bin/bash
-sleep 5m
-job_pid=$!
-echo "job_pid=$job_pid"

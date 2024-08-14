@@ -1,5 +1,0 @@
-#!/bin/ksh
-
-cat<<END|at 10PM today
-/usr/sbin/shutdown -h now
-END

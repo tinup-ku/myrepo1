@@ -1,3 +1,0 @@
-#!/bin/ksh
-key=`cat /tmp/pass4SymmKey`
-su - ser_act.prod -c "/opt/splunk/bin/splunk show-decrypted --value $key"

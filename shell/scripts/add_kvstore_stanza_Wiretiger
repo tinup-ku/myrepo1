@@ -1,5 +1,0 @@
-#!/bin/bash
-
-cd /opt/splunk/etc/system/local && {
-   sed -i.Pre-wiredTiger '$a\\n\[kvstore\]\nstorageEngineMigration=true\n' server.conf
-}

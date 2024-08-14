@@ -1,8 +1,0 @@
-#!/bin/ksh
-echo "open files: " `ulimit -Hn`
-echo "file size: " `ulimit -f`
-echo "data seg size: " `ulimit -d`
-echo "THMP: " `cat /sys/kernel/mm/transparent_hugepage/enabled`
-echo "NTPD: " `ps -ef|grep ntpd | grep -v grep`
-cat /proc/meminfo |grep MemTotal
-lscpu|egrep -i "core|socket"

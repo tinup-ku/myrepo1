@@ -1,5 +1,0 @@
-#!/bin/ksh
-zdump -v EST5EDT  -c $(date '+%Y'),$(date -d '+1 year' '+%Y') | awk -v y=$(date '+%Y') '
-                                     ($6==y && dst=="") {dst=$15}
-                                     ($6==y && dst==$15) {ftime=$12; dst=$15;}
-                                     ($6==y && dst!=$15) {print ftime, "to", $12, "

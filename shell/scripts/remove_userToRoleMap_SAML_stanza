@@ -1,2 +1,0 @@
-#!/bin/ksh
-sed -i '/userToRoleMap_SAML/,$d' /opt/splunk/etc/system/local/authentication.conf

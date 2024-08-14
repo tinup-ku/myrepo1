@@ -1,4 +1,0 @@
-#!/bin/bash
-#find /opt/splunk/var/lib/splunk/* -type d -name "db*"| grep -P "db_\d*_\d*_\d*$"
-find /opt/splunkindex_data/* -type d -name "db*"| grep -P "db_\d*_\d*_\d*$"
-

@@ -1,3 +1,0 @@
-#!/bin/ksh
-jldsh -eg splunk_multisite_indexers "cd /root/HDD && cp \`uname -n\`.cold /tmp;chown ser_act.prod /tmp/\`uname -n\`.cold;su - ser_act.prod -c \"mv -f /tmp/\`uname -n\`.cold /ELI/daily_strace/HDD\""
-jldsh -eg splunk_multisite_indexers "cd /root/SSD && cp \`uname -n\`.hot /tmp;chown ser_act.prod /tmp/\`uname -n\`.hot;su - ser_act.prod -c \"mv -f /tmp/\`uname -n\`.hot /ELI/daily_strace/SSD\""

@@ -1,5 +1,0 @@
-#!/bin/ksh
-ps -ef|grep '4201F249-AE40-4CD3-BF6E-9A758B6EC6E1'
-ps -ef|grep '4201F249-AE40-4CD3-BF6E-9A758B6EC6E1'|awk '{print $2}'
-echo
-ps -ef|grep '4201F249-AE40-4CD3-BF6E-9A758B6EC6E1'|awk '{print $2}'|xargs kill

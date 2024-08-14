@@ -1,5 +1,0 @@
-#!/bin/bash
-
-rm data.bin 2>/dev/null
-g++ -o test_io test_io.cpp
-strace -T -y  -e trace=writev,write ./test_io

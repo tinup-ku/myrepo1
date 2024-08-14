@@ -1,8 +1,0 @@
-[settings]
-httpport = 8000
-enableSplunkWebSSL = true
-privKeyPath = etc/auth/splunkweb/splunkweb.key
-caCertPath = etc/auth/splunkweb/splunkweb.cer
-
-login_content = <center><font color="#FF0000" size="5">Welcome to the PROD REST SHC. <br /><br />This is for REST calls use only.<br /><br /> <br /><br /> <br />Reference:  <a href=https://confluence.mycorp.com/x/GixOGg</a></font></center>
-

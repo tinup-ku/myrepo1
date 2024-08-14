@@ -1,6 +1,0 @@
-#!/bin/bash
-{
-eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
-} 2>/dev/null
-su - svc_act1 -c "/opt/splunk/bin/splunk login -auth admin:${prod};/opt/splunk/bin/splunk rolling-restart cluster-peers"
-
