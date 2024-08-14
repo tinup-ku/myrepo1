@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# This is to remove Search Head's /opt/splunk/etc/apps/${apps}/lookups/.csv with
+# file size > 500M
+# https://docs.splunk.com/Documentation/Splunk/7.0.1/DistSearch/Removeaclustermember 
+UID_="ser_act.prod"
+
+echo -n "Enter a SH nodename? "
+read search_head
+
+# Is it DEV/QA or PROD?
+
+
+# Is it standalone search head or cluster member
+is_it_cluster=`ssh ${search_head} "cd /opt/splunk/etc/system/local;grep '^\[shclustering' server.conf"`
+
+if [[ -z ${is_it_cluster} ]]
+then
+   echo "${search_head} is a standalone search head"
+else
+
+# Identify all members in the cluster
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+echo "Below are all members in $search_head SH cluster:"
+ssh ${search_head} "su - ${UID_} -c \"/opt/splunk/bin/splunk show shcluster-status -auth admin:${prod}\"" 2>/dev/null|grep label|awk '{print $NF}'|sort|uniq
+
+
+all_search_heads=`ssh ${search_head} "su - ${UID_} -c \"/opt/splunk/bin/splunk show shcluster-status -auth admin:${prod}\"" 2>/dev/null|grep label|awk '{print $NF}'|sort|uniq`
+echo all_search_heads=${all_search_heads}
+
+# 
+[[ -z "${all_search_heads}" ]] && {
+   echo "${search_head}, is splunkd down? Operation Abort."
+   exit
+}
+
+echo -n "Which Search Head you want to check /opt/splunk/etc/apps size? "
+read sh
+{
+cat<<END
+#!/bin/ksh
+cd /opt/splunk/etc/apps && {
+  # Identify top 5 biggest size apps
+  top_5_apps=\`du -s *|sort -nr|head -5|awk '{print \$NF}'\`
+  # Get a list of all .csv files >500M
+  dot_csv_files=\`find \$top_5_apps -name "*.csv" -size +100M -print\`
+  # Copy $dot_csv_files to /tmp
+  echo "Copy \$dot_csv_files to /tmp:"
+  find \$dot_csv_files|cpio -pdmv /tmp
+  for file in \$dot_csv_files
+  do
+    ls -l \$file
+  done
+}
+END
+} >/tmp/jjj
+echo "/tmp/jjj"

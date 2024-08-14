@@ -1,0 +1,5 @@
+#!/bin/bash
+cd /opt/splunk/etc/system/local && {
+   sed -i.Splunk_case_3301580 's/\[shclustering\]/&\nexecutor_workers = 50/' server.conf
+   chown ser_act.prod:unx_9998_access server.conf server.conf.Splunk_case_3301580
+}

@@ -1,0 +1,106 @@
+#!/bin/ksh
+####################################################################################
+# Written by user1 | T O S Platform A
+SPLUNK_HOME=/opt/splunk
+SPLUNK_LOCAL=${SPLUNK_HOME}/etc/system/local
+date_=$(date '+%a%H%M_%m%d%Y')
+
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+{
+   
+  # Check if splunklv created
+  lvs |grep splunklv >/dev/null
+  if [[ "$?" != "0" ]]
+  then 
+      echo "Formatting /dev/sdb"
+      parted -s /dev/sdb mklabel gpt
+      parted -s -- /dev/sdb unit GB mkpart primary ext4 0% 100%
+      partprobe
+      echo "Creating physical volume, /dev/sdb1"
+      pvcreate /dev/sdb1
+      echo "Creating volume group, splunkvg"
+      vgcreate splunkvg /dev/sdb1
+      echo "Creating lvm: splunklv"
+      lvcreate -l 100%FREE -n splunklv splunkvg
+      echo "Creating file system: /dev/splunkvg/splunklv"
+      mkfs.ext4 -m 1 /dev/splunkvg/splunklv
+      [[ ! -d /opt/splunk ]] && mkdir /opt/splunk
+      # Add /dev/mapper/splunkvg-splunklv /opt/splunk     ext4     defaults        0 0
+      echo "Updating local mount table: /opt/splunk"
+      cp /etc/fstab /etc/fstab.ORIG
+      sed -i '$a/dev/mapper/splunkvg-splunklv /opt/splunk	ext4	defaults	0 0' /etc/fstab
+      echo "Mounting /opt/splunk"
+      mount /opt/splunk
+  else
+     echo "/dev/splunkvg/splunklv already created. Skip."
+  fi
+
+  # Install additional packages as required by METs
+  yum -y install kernel-headers
+  yum -y install glibc-headers gcc gdb zip unzip nc nmap tree
+
+  # Set up splunk parameters
+  # 1. /etc/security/limits.conf
+  mv -f /etc/security/limits.conf /etc/security/limits.conf.ORIG
+  {
+  cat /etc/security/limits.conf.ORIG
+  cat<<END_
+# Begin Splunk Settings
+*     soft    nofile  262144
+*     hard    nofile  262144
+# End Splunk Settings
+END_
+  } >> /etc/security/limits.conf
+
+  # 2. /etc/sysctl.conf
+  mv -f /etc/sysctl.conf /etc/sysctl.conf.ORIG
+  {
+  cat /etc/sysctl.conf.ORIG
+  cat<<END__
+# Begin Splunk Settings
+fs.file-max = 2048000
+# End Splunk Settings
+END__
+  } >> /etc/sysctl.conf
+  sysctl -p
+
+  # 3. /etc/security/limits.d/20-nproc.conf: nproc set to 131072 per Splunk's recommendation.
+  {
+  cat<<END
+# Default limit for number of user's processes to prevent
+# accidental fork bombs.
+# See rhbz #432903 for reasoning.
+
+*          soft    nproc     131072
+*          hard    nproc     131072
+root       soft    nproc     unlimited
+END
+  } > /etc/security/limits.d/20-nproc.conf
+
+  chmod 644 /etc/security/limits.d/20-nproc.conf
+
+  # On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+
+  [ -f /etc/rc.d/rc.local ] && {
+    /bin/cp -p /etc/rc.d/rc.local /etc/rc.d/ORIG.rc.local
+    {
+      cat /etc/rc.d/ORIG.rc.local
+      cat<<EOF
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+# This has a profound impact on system load. There's a decent Oracle Blog
+# about it at
+# https://blogs.oracle.com/linux/entry/performance_issues_with_transparent_huge.
+# http://answers.splunk.com/answers/112305/on-rh-6-and-splunk-6-my-searches-are-consuming-lots-of-cpu
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+EOF
+    } > /etc/rc.d/rc.local
+  chmod +x /etc/rc.d/rc.local
+  /etc/rc.d/rc.local
+  }
+} | tee /root/`basename $0`.OUT.${date_}

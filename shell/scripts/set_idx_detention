@@ -1,0 +1,62 @@
+#!/bin/ksh
+###############################################################################
+# The script is to enable|disable Indexer Detention mode.                     #
+# Based on                                                                    #
+# https://docs.splunk.com/Documentation/Splunk/7.2.6/Indexer/Peerdetention    #
+# When a peer enters the detention state manually, it                         #
+# - stops replicating data from other peer nodes.                             #
+# - optionally stops accepting data from the ports that consume external data,#
+#   causing the peer to no longer index most types of external data.          #
+# - continues to index internal data and stream the data to target peer nodes.#
+# - continues to participate in searches.                                     #
+# When you manually put a peer into the detention state, it remains in        #
+# detention until you remove it from detention.                               #
+# Manual detention persists through peer restart                              #
+###############################################################################
+# Written By user1 | T.O.S
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%a%H%M_%m%d%Y')
+env_=`uname -n`
+typeset -R3 env_
+
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=${dev}
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=ser_act.prod
+                           key=${prod}
+               ;;
+           * )
+               case `uname -n` in
+                   ser2* ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           key=${prod}
+                           ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=${dev}
+                           ;;
+               esac
+               ;;
+esac
+
+case $1 in 
+    on  ) mode=on
+          ;;
+    off ) mode=off
+          ;;
+     *  ) 
+         echo "Usage: $0 on|off"
+         exit
+         ;;
+esac
+
+{
+su - ${uid} -c "${SPLUNK_BIN}/splunk edit cluster-config -manual_detention $mode -auth admin:${key}"
+echo -n "Verifying `uname -n` manual_detention status:"
+su - ${uid} -c "${SPLUNK_BIN}/splunk list cluster-config |grep manual_detention|awk -F: '{print $NF}'"
+}| tee /var/tmp/`basename $0`.${date_}.OUT.$$
+#mailx -s "Indexer Detention Mode: $mode|`uname -n`:/var/tmp/`basename $0`.${date_}.OUT.$$" user1@mycorp.com,user2@mycorp.com < /var/tmp/`basename $0`.${date_}.OUT.$$

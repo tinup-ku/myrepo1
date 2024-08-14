@@ -1,0 +1,8 @@
+#!/bin/ksh
+LOCAL_BIN=/usr/local/bin
+user_list="user1@mycorp.com,user2@mycorp.com"
+
+splunk_process=`pgrep splunkd|wc -l`
+[[ "${splunk_process}" = "0" ]] && ${LOCAL_BIN}/start_splunk && mailx -s "ITRS HEC `uname -n`: splunkd crashed. Restarted.(EOM)" ${user_list} < /dev/null
+
+

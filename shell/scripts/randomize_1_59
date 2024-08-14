@@ -1,0 +1,1 @@
+echo "randmin=$((1 + RANDOM % 59))"

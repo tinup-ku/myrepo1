@@ -1,0 +1,16 @@
+#!/bin/bash
+SPLUNK_BIN=/opt/splunk/bin
+
+{
+cd $SPLUNK_BIN && {
+        for splunk_id in `su - ser_act.prod -c "$SPLUNK_BIN/splunk status"| egrep [[:digit:]]+ -o`
+        do
+        echo "******************** $splunk_id ********************"
+        ps -ef|grep "$splunk_id"
+        echo "Number of files open:`lsof -p $splunk_id|wc -l`"
+        lsof -p $splunk_id
+        done
+}
+} | tee /var/tmp/`basename $0`.OUT  
+echo
+echo "Output is in /var/tmp/`basename $0`.OUT"

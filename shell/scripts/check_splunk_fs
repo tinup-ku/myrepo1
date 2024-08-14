@@ -1,0 +1,20 @@
+#!/bin/bash
+splunk_FS=$(grep splunk /etc/fstab|grep -v 'nfs'|awk '{print $2}')
+echo "Filesystem,Status"
+for fs in ${splunk_FS}
+do
+  # Is it mounting?
+  mount |awk '{print $3}'|grep -Fx "${fs}" >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+     touch ${fs}/test_ >/dev/null 2>&1
+     if [[ "$?" != "0" ]]
+     then
+        echo "${fs},FAILED_TOUCH_TEST"
+     else
+        echo "${fs},OK" 
+     fi
+  else
+    echo "${fs},FAILED_MOUNT"
+  fi
+done

@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# This is to remove a Search Head from Search Head Cluster.
+# Based on 
+# https://docs.splunk.com/Documentation/Splunk/7.0.1/DistSearch/Removeaclustermember 
+UID_="ser_act.dev"
+
+echo -n "Enter a SH nodename? "
+read search_head
+
+# Identify all members in the cluster
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+echo dev=$dev
+
+echo "Below are all members in $search_head SH cluster:"
+ssh ${search_head} "su - ${UID_} -c \"/opt/splunk/bin/splunk show shcluster-status -auth admin:${dev}\"" 2>/dev/null|grep label|awk '{print $NF}'|sort|uniq
+
+
+all_search_heads=`ssh ${search_head} "su - ${UID_} -c \"/opt/splunk/bin/splunk show shcluster-status -auth admin:${dev}\"" 2>/dev/null|grep label|awk '{print $NF}'|sort|uniq`
+echo all_search_heads=${all_search_heads}
+
+# 
+[[ -z "${all_search_heads}" ]] && {
+   echo "${search_head}, is splunkd down? Operation Abort."
+   exit
+}
+
+# Identify captain
+captain=`ssh ${search_head} "su - ${UID_} -c \"/opt/splunk/bin/splunk list shcluster-members -auth admin:${dev}\"" 2>/dev/null|grep -A1 'is_captain:1'|tail -1|awk -F: '{print $2}'`
+echo captain=$captain
+# Check captain splunk version
+splunk_version=`ssh $captain "/opt/splunk/bin/splunk -version|awk '{print $2}'" 2>/dev/null`
+echo
+echo "Captain Splunk version: $splunk_version"
+
+echo -n "Which Search Head you want to remove from its cluster? "
+read remove_sh
+
+
+# Initiate rolling restart from the captain.
+echo "Removing ${remove_sh} from the captain, $captain"
+#ssh $captain  "su - ${UID_} -c \"/opt/splunk/bin/splunk rolling-restart shcluster-members -searchable true -auth admin:${dev}\"" 2>/dev/null
+ssh -q $captain  "su - ${UID_} -c \"/opt/splunk/bin/splunk remove shcluster-member -mgmt_uri https://${remove_sh}:8089 -auth admin:${dev}\"" 2>/dev/null
+
+captain=`echo $captain|sed 's/.some_loc.mycorp.com//g'`
+echo "Current Search Head cluster status:"
+ssh -q $captain  "show_shcluster-status 2>/dev/null|grep label"
+echo
+echo "Current kvstore status"
+ssh -q $captain "show_kvstore-status 2>/dev/null|grep hostAndPort|sort -u"

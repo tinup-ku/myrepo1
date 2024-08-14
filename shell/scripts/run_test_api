@@ -1,0 +1,29 @@
+#!/bin/ksh
+curl -k -u svc.DSPU_splunk_dev:Big-yiarv7ugryick  https://splunk-qa.dev.mycorp.com:8089/services/search/jobs/export -d search="search index=channelmanagement | stats count " -d earliest_time='2023-01-19T09:00:00' -d latest_time='2023-01-19T09:05:00'
+
+curl -k -u svc.DSPU_splunk_dev:${key}  https://splunk-qa.dev.mycorp.com:8089/services/search/jobs/export -d search="search index=channelmanagement | stats count " -d earliest_time='2023-02-06T08:00:00' -d latest_time='2023-02-06T10:00:00'
+
+
+ curl -k -u ${user}:${passwd}  https://splunk-qa.dev.mycorp.com:8089/services/search/jobs/export -d search="search index=channelmanagement | stats count " -d earliest_time='2023-01-19T09:00:00' -d latest_time='2023-01-19T09:05:00'
+
+
+ curl -k -u admin https://splunk.mycorp.com:8089/servicesNS/svc.dart_portal/SCH_DOC_app -d  search='search index=controlm NOT "CDW*" sourcetype=controlm_activeenv_logs ( JobName=* ) AND ( ApplicationName=* ) AND ( [|inputlookup HostGroup.csv | search Platform="*BDH*" |table HostGroup] ) AND ( NOT ( SubApplication="GDTMDTR0/S_CDW_INFA" ) )'  -d earliest_time='2023-01-19T09:00:00' -d latest_time='2023-01-19T09:05:00'
+
+
+curl -k -u admin https://splunk.mycorp.com:8089/servicesNS/svc.dart_portal/SCH_DOC_app -d  search='search index=controlm sourcetype=controlm_activeenv_logs' -d earliest_time='2023-01-19T09:00:00' -d latest_time='2023-01-19T09:05:00'
+
+
+
+
+curl -k -u admin:${key} https://splunk.mycorp.com:8089/servicesNS/svc.dart_portal/-
+
+curl -k -u admin:${key} https://splunk-restapi-qa.dev.mycorp.com:8089/servicesNS/-/-/saved/searches
+
+curl -k -u user:${key} https://splunk-restapi-qa.dev.mycorp.com:8089/servicesNS/-/-/saved/searches|grep 'SCH_SNE'
+                                                                                ^ ^
+                                                                                | |
+                                                                             user search
+
+curl -k -u admin:pR0D@dm1nuS3R https://splunk-restapi.mycorp.com:8089/servicesNS/azeez.lawal/SCH_DOC_app -d search="search index=controlm|stats count " -d earliest_time='2023-01-19T09:00:00' -d latest_time='2023-01-19T09:05:00'
+
+curl -k -u admin:pR0D@dm1nuS3R https://splunk-restapi-qa.dev.mycorp.com:8089/services/search/jobs/export search="search index=controlm | stats count " -d earliest_time='2023-01-19T09:00:00' -d latest_time='2023-01-19T09:05:00'

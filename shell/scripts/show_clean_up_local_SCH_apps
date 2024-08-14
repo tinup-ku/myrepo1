@@ -1,0 +1,64 @@
+#!/bin/ksh
+# PROD https://splunk.mycorp.com clean up is based on
+# https://confluence.mycorp.com/display/TOS/Cleanup+Splunk+Prod+Local+changes
+#
+# Written by user1 | Splunk TOS Platform
+#
+SPLUNK_APPS=/opt/splunk/etc/apps
+if [[ -d ${SPLUNK_APPS}/$1 ]]
+then
+   # mkdir -p /tmp/$1/local/data/ui/views >/dev/null 2>&1
+   # mkdir -p /tmp/$1/local/data/ui/nav >/dev/null 2>&1
+   # Backup ${SPLUNK_APPS}/$1/local
+   # [[ -d ${SPLUNK_APPS}/$1/local ]] && \
+   # cd ${SPLUNK_APPS}/$1/local && find . -name "*.conf"|cpio -pdmu /tmp/$1/local >/dev/null
+
+   # Backup ${SPLUNK_APPS}/$1/local/data/ui/views
+   # [[ -d ${SPLUNK_APPS}/$1/local/data/ui/views ]] && \
+   # cd ${SPLUNK_APPS}/$1/local/data/ui/views && \
+   #    find . -name "*.xml" |cpio -pdmu /tmp/$1/local/data/ui/views >/dev/null
+
+   # Backup ${SPLUNK_APPS}/$1/local/data/ui/nav
+   # [[ -d ${SPLUNK_APPS}/$1/local/data/ui/nav ]] && \
+   # cd ${SPLUNK_APPS}/$1/local/data/ui/nav && \
+   #    find . -name "*.xml" |cpio -pdmu /tmp/$1/local/data/ui/nav >/dev/null
+
+   [[ -d ${SPLUNK_APPS}/$1/local ]] && \
+   cd ${SPLUNK_APPS}/$1/local && {
+      ls|egrep 'savedsearches.conf|transforms.conf|macros.conf' >/dev/null 2>&1
+      [[ "$?" = "0" ]] && {
+         echo ". In ${SPLUNK_APPS}/$1/local, remove:"
+         [[ -f savedsearches.conf ]] && ls -l savedsearches.conf
+         [[ -f transforms.conf ]] && ls -l transforms.conf
+         [[ -f macros.conf ]] && ls -l macros.conf
+         echo
+      }
+   }
+   [[ -d ${SPLUNK_APPS}/$1/local/data/ui/views ]] && \
+   cd ${SPLUNK_APPS}/$1/local/data/ui/views && {
+      ls -a |grep '\.xml' >/dev/null 2>&1
+      [[ "$?" = "0" ]] && {
+         echo ". In ${SPLUNK_APPS}/$1/local/data/ui/views, remove:"
+         find . -name "*.xml" -exec ls -l {} +
+         echo
+      }
+   }
+
+   [[ -d ${SPLUNK_APPS}/$1/local/data/ui/nav ]] && \
+   cd ${SPLUNK_APPS}/$1/local/data/ui/nav && {
+      ls -a |grep '\.xml' >/dev/null 2>&1
+      [[ "$?" = "0" ]] && {
+         echo ". In ${SPLUNK_APPS}/$1/local/data/ui/nav, remove:"
+         find . -name "*.xml" -exec ls -l {} +
+         echo
+      }
+   }
+   cd ${SPLUNK_APPS}/$1/metadata 2>/dev/null && {
+      [[ -f local.meta ]] && {
+          echo ". In ${SPLUNK_APPS}/$1/metadata, remove:"
+          ls -l local.meta
+      }
+   }
+else
+  echo "${SPLUNK_APPS}/$1 doesnot exist. Abort"
+fi

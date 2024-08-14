@@ -1,0 +1,30 @@
+#!/bin/ksh
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+{
+#perccli /c0 add vd type=raid0 drives=64:0
+
+# Partiton new drive, /dev/sdb
+DISK=`fdisk -l|awk '/399.4/{print $2}'|sed 's/://g'`
+DISK=/dev/sdb
+   echo "Formatting ${DISK}"
+   parted -s ${DISK} mklabel gpt
+   parted -s -- ${DISK} unit GB mkpart primary ext4 0% 100%
+   partprobe ${DISK}
+   parted ${DISK} print
+   pvcreate -y ${DISK}1 
+   vgcreate splunkvg ${DISK}1
+   lvcreate -L 100G -n splunklv splunkvg
+   # Format the ${DISK}
+   mkfs.ext4 -E lazy_itable_init=1 /dev/splunkvg/splunklv
+
+# Update mount table
+echo '/dev/splunkvg/splunklv /opt/splunk/var/run/splunk/dispatch ext4 noatime,errors=remount-ro 1 0' >> /etc/fstab
+mkdir -p /opt/splunk/var/run/splunk/dispatch
+
+} | tee /var/tmp/config_SSD_drive.OUT
+
+

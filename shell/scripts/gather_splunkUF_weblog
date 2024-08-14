@@ -1,0 +1,10 @@
+#!/bin/bash
+{
+while [ 1 ]
+do
+  date
+  jldsh -ew s0456some_loc,s0457some_loc,s0662loc2,s0663loc2 "gather_splunkUF_weblog_port_9990"
+  sleep 5m
+done
+} >> /tmp/splunkUF_1.out
+

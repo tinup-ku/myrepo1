@@ -1,0 +1,3 @@
+#!/bin/ksh
+systemctl stop Splunkd.service
+systemctl daemon-reload

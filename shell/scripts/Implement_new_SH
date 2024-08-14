@@ -1,0 +1,176 @@
+
+DG OS Drive LIST :
+=============
+
+---------------------------------------------------------------------
+EID:Slt DID State DG      Size Intf Med SED PI SeSz Model         Sp
+---------------------------------------------------------------------
+64:24    24 Onln   0 185.75 GB SATA SSD N   N  512B THNSF8200CCSE U
+64:25    25 Onln   0 185.75 GB SATA SSD N   N  512B THNSF8200CCSE U
+---------------------------------------------------------------------
+
+#!/bin/ksh
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+{
+# Written by JPD.
+# If splunk splunk-7.2.3-06d57c595b80.x86_64 installed then exit
+if [[ "`rpm -q splunk`" = "splunk-7.2.3-06d57c595b80.x86_64" ]]
+then
+  echo "splunk-7.2.3-06d57c595b80.x86_64 installed. Abort."
+else  
+  install_splunk.RHEL7 -v 7.2.3
+fi
+
+# Check if perccli installed.
+rpm -q perccli >/dev/null
+[[ "$?" != "0" ]] && {
+   umount -l /mnt
+   mount share_server.dev.mycorp.com:/infra/loc /mnt
+   cd /mnt/Splunk && rpm -ivh perccli-1.11.03-1.noarch.rpm
+   ln -s /opt/MegaRAID/perccli/perccli64 /usr/local/bin/perccli
+}
+   
+# Update mount table with NAS: /ELI and /splunk_data_export
+grep '/ELI' /etc/fstab >/dev/null
+[[ "$?" != "0" ]] && \
+    echo 'entnas5:/vol/f0_ent_vol4/eli_splunk-prod   /ELI   nfs   nfsvers=3,rsize=32768,wsize=32768,intr,tcp,rw   0  0' >> /etc/fstab
+
+grep '/splunk_data_export' /etc/fstab >/dev/null
+[[ "$?" != "0" ]] && \
+   echo 'nas30u0a2b.some_loc.mycorp.com:/splunk/eli_splunkSH-Prod  /splunk_data_export    nfs     rw,bg,soft,nfsvers=3,intr    0 0' >> /etc/fstab
+
+
+# Create mount point /ELI and /splunk_data_export
+mkdir -p /ELI /splunk_data_export
+
+# Install latest Java
+umount /mnt 2>/dev/null
+mount share_server.dev.mycorp.com:/infra/loc /mnt
+rpm -ivh /mnt/Java/JDK-1.8-Latest-Linux64.rpm
+umount /mnt 2>/dev/null
+
+# Install additional packages as required by METs
+# BEFORE
+#os-update -ay install kernel-headers
+# AFTER
+os-update -k `uname -r|sed 's/.x86_64//g'` -y install kernel-headers
+os-update -y install glibc-headers
+os-update -y install gcc
+os-update -y install gdb
+os-update -y install zip
+os-update -y install unzip
+rpm -q kernel-headers glibc-headers gcc gdb zip
+
+# Set up splunk parameters
+# 1. /etc/security/limits.conf
+mv -f /etc/security/limits.conf /etc/security/limits.conf.ORIG
+{
+cat /etc/security/limits.conf.ORIG
+cat<<END_
+# Begin Splunk Settings
+*     soft    nofile  65536
+*     hard    nofile  65536
+# End Splunk Settings
+END_
+}>/var/tmp/limits.$$
+
+mv -f /var/tmp/limits.$$ /etc/security/limits.conf
+
+# 2. /etc/sysctl.conf
+mv -f /etc/sysctl.conf /etc/sysctl.conf.ORIG
+{
+cat /etc/sysctl.conf.ORIG
+cat<<END__
+# Begin Splunk Settings
+fs.file-max = 2048000
+# End Splunk Settings
+END__
+} > /var/tmp/sysctl.conf.$$
+
+mv -f /var/tmp/sysctl.conf.$$ /etc/sysctl.conf
+sysctl -p
+
+# 3. /etc/security/limits.d/20-nproc.conf: nproc set to 65536
+
+sed -i 's/soft    nproc     4096/soft    nproc     65536/g' /etc/security/limits.d/20-nproc.conf
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+
+[ -x /etc/rc.d/rc.local ] && {
+  /bin/cp -p /etc/rc.d/rc.local /etc/rc.d/ORIG.rc.local
+  {
+    cat /etc/rc.d/ORIG.rc.local
+    cat<<EOF
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP). 
+# This has a profound impact on system load. There's a decent Oracle Blog 
+# about it at 
+# https://blogs.oracle.com/linux/entry/performance_issues_with_transparent_huge. 
+# http://answers.splunk.com/answers/112305/on-rh-6-and-splunk-6-my-searches-are-consuming-lots-of-cpu
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+EOF
+  } > /var/tmp/rc.local.$$
+/bin/mv -f /var/tmp/rc.local.$$ /etc/rc.d/rc.local
+chmod +x /etc/rc.d/rc.local
+/etc/rc.d/rc.local
+}
+
+} | tee /var/tmp/Implement_new_SearchHead_RHEL7.2.3.output
+exit
+# On the unconfigured drives:
+UN-CONFIGURED DRIVE LIST :
+========================
+
+--------------------------------------------------------------------
+EID:Slt DID State DG     Size Intf Med SED PI SeSz Model         Sp
+--------------------------------------------------------------------
+64:0      0 UGood -  372.0 GB SATA SSD N   N  512B THNSF8400CCSE U
+64:1      1 UGood -  372.0 GB SATA SSD N   N  512B THNSF8400CCSE U
+--------------------------------------------------------------------
+
+
+[root@s3146loc2 ~]# perccli /c0 add vd type=raid0 drives=64:0
+Controller = 0
+Status = Success
+Description = Add VD Succeeded
+
+[root@s3146loc2 ~]# fdisk -l |grep '/dev/sd'
+WARNING: fdisk GPT support is currently new, and therefore in an experimental phase. Use at your own discretion.
+Disk /dev/sda: 199.4 GB, 199447543808 bytes, 389545984 sectors
+Disk /dev/sdb: 399.4 GB, 399431958528 bytes, 780140544 sectors
+
+# Partiton new drive, /dev/sdb
+DISK=`fdisk -l|awk '/399.4/{print $2}'|sed 's/://g'`
+fdisk -l|grep "^Disk ${DISK}: 399.4 GB" >/dev/null
+if [ "$?" = "0" ]
+then
+   echo "Formatting ${DISK}"
+   parted -s ${DISK} mklabel gpt
+   parted -s -- ${DISK} unit GB mkpart primary ext4 0% 100%
+   partprobe ${DISK}
+   parted ${DISK} print
+   pvcreate -y ${DISK}1 
+   vgcreate splunkvg ${DISK}1
+   lvcreate -L 100G -n splunklv splunkvg
+   # Format the ${DISK}
+   mkfs.ext4 -E lazy_itable_init=1 /dev/splunkvg/splunklv
+else
+   echo "Disk ${DISK} doesnot exit. Abort!"
+   exit
+fi
+
+# Update mount table
+echo '/dev/splunkvg/splunklv /opt/splunk/var/run/splunk/dispatch ext4 noatime,errors=remount-ro 1 0' >> /etc/fstab
+mkdir -p /opt/splunk/var/run/splunk/dispatch
+cd /opt
+chown -R ser_act.prod:unx_9998_access splunk
+
+
+
+

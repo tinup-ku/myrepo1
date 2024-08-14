@@ -1,0 +1,29 @@
+#!/bin/ksh
+
+echo "Disable Splunk systemD"
+systemctl disable Splunkd
+cd /etc/systemd/system && [[ -f Splunkd.service ]] && rm -f Splunkd.service
+systemctl daemon-reload
+
+echo "Enable Splunk systemV.init"
+ln -s /etc/init.d/splunk /etc/rc.d/rc0.d/K60splunk
+ln -s /etc/init.d/splunk /etc/rc.d/rc1.d/K60splunk 
+ln -s /etc/init.d/splunk /etc/rc.d/rc2.d/S90splunk
+ln -s /etc/init.d/splunk /etc/rc.d/rc3.d/S90splunk
+ln -s /etc/init.d/splunk /etc/rc.d/rc4.d/S90splunk
+ln -s /etc/init.d/splunk /etc/rc.d/rc5.d/S90splunk
+ln -s /etc/init.d/splunk /etc/rc.d/rc6.d/K60splunk
+
+cd /usr/local/bin && {
+  mv -f stop_splunk stop_splunk.systemd
+  mv -f start_splunk start_splunk.systemd
+}
+
+cat<<END
+
+Need to copy 
+ser10966some_loc:/root/scripts/start_splunk.init to /usr/local/bin/start_splunk
+ser10966some_loc:/root/scripts/stop_splunk.init to /usr/local/bin/stop_splunk.evacuate
+ser10966some_loc:/root/scripts/splunk.init /etc/init.d/splunk 
+
+END

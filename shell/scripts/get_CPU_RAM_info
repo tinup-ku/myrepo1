@@ -1,0 +1,5 @@
+#!/bin/ksh
+# "echo -n \"\`grep MemT /proc/meminfo \` \";echo -n \"CPU: \";grep process /proc/cpuinfo|wc -l"
+echo -n "CPU: `grep  process /proc/cpuinfo|wc -l`"
+echo " `grep MemT /proc/meminfo`"
+pvs|grep -v PFree

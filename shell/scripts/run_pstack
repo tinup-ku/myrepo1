@@ -1,0 +1,25 @@
+#!/bin/bash
+SPLUNK_LOG=/opt/splunk/var/log/splunk
+# Set elapsed to 3 mins.
+elapsed=180
+samples=25
+
+# Check if collect-stacks.sh is running
+ps -ef|grep '[c]ollect-stacks.sh' >/dev/null
+[[ "$?" = "0" ]] && {
+  echo
+  echo "pstack is running:"
+  ps -ef|grep '[c]ollect-stacks.sh'
+  echo
+}
+
+# Check ${SPLUNK_LOG}/metrics.log. Get Epoch time in seconds.
+cd ${SPLUNK_LOG} && metric_log_time_seconds=$(stat -c%Z metrics.log)
+now=$(date +%s)
+elapsed_time=$((now - metric_log_time_seconds))
+[[ ${elapsed_time} -gt ${elapsed} ]] && {
+   echo "Start collect-stacks.sh and collect 25 samples"
+   nohup collect-stacks.sh -b -s ${samples} &
+   echo "OUTPUT: /tmp/splunk"
+}
+

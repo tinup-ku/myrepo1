@@ -1,0 +1,30 @@
+
+# Checks if server is in the Dev or Prod domain
+
+# export host_group_env sets the group for the server
+# export classifier is needed to put server in non-production/production classification
+
+case $client_host in
+  *'dev'*)
+    export host_group_env="Dev"
+    export classifier="non-production"
+   ;;
+  *'cud'*)
+    export host_group_env="Dev"
+    export classifier="non-production"
+   ;;
+  *'some_loc'*)
+    export host_group_env="Prod"
+    export classifier="production"
+   ;;
+  *'cuq'*)
+    export host_group_env="Prod"
+    export classifier="production"
+   ;;
+  *'ser2'*)
+    export host_group_env="Prod"
+    export classifier="production"
+   ;;
+  *) ;;
+esac
+

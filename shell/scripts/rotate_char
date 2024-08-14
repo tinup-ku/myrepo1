@@ -1,0 +1,31 @@
+#!/bin/bash
+
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+date_=$(date '+%a%H%M_%m%d%Y')
+
+rotate_char() {
+   chars=( '←' '↑' '→' '↓' )
+   #for sec in {1..30}
+   while [[ $sec -lt $1 ]]
+   do
+     sec=`expr $sec + 1`
+#    echo -n $sec
+     echo -ne "\r$sec${green}${chars[i++ % ${#chars[@]}]}"
+     sleep 1
+     echo -ne "\b${reset_color}"
+   done
+}
+
+date
+#rotate_char $1
+#echo
+                    rotate_char $1
+                    echo
+
+date
+
+          
+ 

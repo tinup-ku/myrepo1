@@ -1,0 +1,146 @@
+#!/bin/bash
+
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+cluster_master=ser24-010472.us.global.mycorp.com
+env_=`uname -n|grep -o '...$'`
+
+
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=${dev}
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=ser_act.prod
+                           key=${prod}
+               ;;
+           * )
+               case `uname -n` in
+                   ser2* ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           key=${prod}
+                           ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=${dev}
+                           ;;
+               esac
+               ;;
+esac
+
+get_maintenance_mode ()
+{
+  maintenance_mode=`curl -k -u admin:${key} https://${cluster_master}:8089/services/cluster/master/status 2>/dev/null|grep maintenance_mode|awk -F">" '{print $2}'|awk -F"<" '{print $1}'`
+}
+
+##########
+# M A I N
+##########
+date
+cat<<END
+
+Evacuate splunk indexers by shutting down splunkd
+CD1_D (Cluster Master http://${cluster_master}:8000)
+
+This procedure will
+1. Set indexer in Detention mode
+2. Stop splunkd
+
+END
+echo -e "There are 2 sites with 4 E/F-core (site${bold_yellow}1E${reset_color}, site${bold_yellow}1F${reset_color}, site${bold_yellow}2E${reset_color}, site${bold_yellow}2F${reset_color}):"
+echo
+loc4_site1_E=`jldsh -eg CD1_D_DC7_E-core_site1 "echo"|sed 's/://g'`
+count=`echo $loc4_site1_E|wc -w`
+echo "#############"
+echo "CD1_D Site 1:"
+echo "#############"
+echo -e "${bold_yellow}CD1_D_DC7_E-core_site1:${reset_color} DC7 site${bold_yellow}1E${reset_color} (E-core): $count nodes"
+echo $loc4_site1_E
+echo
+
+loc4_site1_F=`jldsh -eg CD1_D_DC7_F-core_site1 "echo"|sed 's/://g'`
+count=`echo $loc4_site1_F|wc -w`
+echo -e "${bold_yellow}CD1_D_DC7_F-core_site1:${reset_color} DC7 site${bold_yellow}1F${reset_color} (F-core): $count nodes"
+echo $loc4_site1_F
+echo
+
+loc5_site2_E=`jldsh -eg CD1_D_DC4_E-core_site2 "echo"|sed 's/://g'`
+count=`echo $loc5_site2_E|wc -w`
+echo "#############"
+echo "CD1_D Site 2:"
+echo "#############"
+echo -e "${bold_yellow}CD1_D_DC4_E-core_site2:${reset_color} DC4 site${bold_yellow}2E${reset_color} (E-core): $count nodes"
+echo $loc5_site2_E
+echo
+
+loc5_site2_F=`jldsh -eg CD1_D_DC4_F-core_site2 "echo"|sed 's/://g'`
+count=`echo $loc5_site2_F|wc -w`
+echo -e "${bold_yellow}CD1_D_DC4_F-core_site2:${reset_color} DC4 site${bold_yellow}2F${reset_color} (F-core): $count nodes"
+echo $loc5_site2_F
+echo
+echo -en "Enter site number (${bold_yellow}1E${reset_color}|${bold_yellow}1F${reset_color}|${bold_yellow}2E${reset_color}|${bold_yellow}2F${reset_color})? "
+read number
+case $number in
+             1E )
+                site=${loc4_site1_E}
+                GROUP=CD1_D_DC7_E-core_site1
+                ;;
+             1F )
+                site=${loc4_site1_F}
+                GROUP=CD1_D_DC7_F-core_site1
+                ;;
+             2E )
+                site=${loc5_site2_E}
+                GROUP=CD1_D_DC4_E-core_site2
+                ;;
+             2F )
+                site=${loc5_site2_F}
+                GROUP=CD1_D_DC4_F-core_site2
+                ;;
+             * )
+                echo -e "${bold_yellow}${number}${reset_color} is INCORRECT. Abort"
+                exit
+                ;;
+esac
+echo
+echo -en "Evacuating Splunk indexers on site${bold_yellow}${number}${reset_color} (${green}Y${reset_color}|${red}N${reset_color})? "
+read response
+case ${response} in
+     Y|y )
+           # Show cluster master status
+           echo
+           #ssh $cluster_master "show_maintenance" 2>/dev/null
+           get_maintenance_mode
+           echo "Cluster Master http://$cluster_master Maintenance mode: ${maintenance_mode}"
+           [[ "${maintenance_mode}" = "0" ]] && {
+              echo -en "Put Cluster Master $cluster_master in Maintenance mode (${green}Y${reset_color}|${red}N${reset_color})? "
+              read ans
+              case ${ans} in
+                   Y|y )
+                         {
+                           ssh -q ${cluster_master} "echo y|start_maintenance" >/dev/null
+                           echo
+                           ssh ${cluster_master} "show_maintenance"
+                         } 2>/dev/null
+                         ;;
+                     * )
+                         echo -n "Hit ENTER to continue..."
+                         read
+                         ;;
+              esac
+            }
+            #get_maintenance_mode
+            #[[ "${maintenance_mode}" = "1" ]] && {
+               echo -e "Stopping splunkd on site${bold_yellow}${number}${reset_color}: ${bold_yellow}$GROUP${reset_color}"
+               jldsh -eg $GROUP "stop_splunk.evacuate"
+            #}
+           ;;
+       * )
+           echo "Abort"
+           exit
+           ;;
+esac

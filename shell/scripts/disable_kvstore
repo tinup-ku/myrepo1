@@ -1,0 +1,13 @@
+#!/bin/bash
+SPLUNK_HOME=/opt/splunk
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+echo
+echo "Disabling kvstore on indexer"
+# Add the following to local server.conf
+# [kvstore]
+# disabled = true
+cd ${SPLUNK_LOCAL} && {
+   grep '^\[kvstore' server.conf >/dev/null
+   [[ "$?" != "0" ]] && \
+     sed -i '$a\\n\[kvstore\]\ndisabled = true\n' ${SPLUNK_LOCAL}/server.conf
+}

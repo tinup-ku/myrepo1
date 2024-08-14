@@ -1,0 +1,176 @@
+#!/bin/bash
+SPLUNK_APPS=/opt/splunk/etc/apps
+SPLUNK_ETC=/opt/splunk/etc
+SHCLUSTER=/opt/splunk/etc/shcluster/apps
+LOG=/root/LOOKUPS.LOG
+date_=$(date '+%F_%H%M')
+
+[[ ! -d ${LOG} ]] && mkdir ${LOG}
+
+get_captain ()
+{
+  get_key ${F5_fqdn} 2>/dev/null
+  captain=`curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+
+  [[ -z ${captain} ]] && {
+     echo "Search Head Deployer $(uname -n): ${F5_fqdn} | captaincy unidentified. Abort."
+     exit
+  }
+  search_peer=${captain}
+}
+
+get_search_peers ()
+{
+  search_peers=`{
+  curl -k -u admin:${key} https://${captain}:8089/services/shcluster/captain/members|grep "mgmt_uri"
+  } 2>/dev/null|sed -e 's/<s:key name="mgmt_uri">https:\/\///g' -e 's/:8089<\/s:key>//g'`
+
+  [[ -z ${search_peers} ]] && {
+     echo "Search Head Deployer $(uname -n): ${F5_fqdn} | Search Head members unidentified. Abort."
+     exit
+  }
+
+  for sh_ in $search_peers
+  do
+    echo "${sh_}"
+  done
+  search_peers=$(echo ${search_peers}|sed 's/ /,/g')
+}
+
+get_key ()
+{
+  eval $(. /.splunk_)
+  echo $1|grep 'dev' >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+    uid_gid="ser_act.dev:unx_60231_splunk_admin_dev"
+    key=${dev}
+  else
+    uid_gid="ser_act.prod:unx_9998_access"
+    key=${prod}
+  fi
+}
+
+get_captain_apps_list ()
+{
+{
+cat<<END | ssh ${search_peer} 2>/dev/null
+cd ${SPLUNK_APPS}
+find */lookups -type f | while read file
+do
+  echo -n "\`stat -c '%Y' \$file\` "
+  sha1sum \$file
+done
+END
+} > /tmp/${search_peer}.Modify_sha1sum.time
+}
+
+get_deployer_apps_list ()
+{
+  cd ${SPLUNK_ETC}/shcluster/apps && {
+     {
+       find */lookups -type f | \
+       while read file
+       do
+         echo -n "`stat -c '%Y' $file` "
+         sha1sum $file
+       done
+     } > /tmp/deployer.Modify_sha1sum.time
+   }
+}
+
+update_SH_lookups ()
+{
+  echo ". Examining lookups timestamp and checksum on"
+  echo "Source: Deployer $(uname -n):/tmp/deployer.Modify_sha1sum.time and"
+  echo "Destination: SH captain ${captain}:/tmp/${search_peer}.Modify_sha1sum.time"
+  echo
+  echo ". Copying Deployer $(uname -n):${SHCLUSTER} new/updated lookups to All Search Head members:${SPLUNK_APPS}"
+  echo
+  cat /tmp/deployer.Modify_sha1sum.time|while read line
+  do
+    modify_deployer=`echo $line|awk '{print $1}'`
+    sha1sum_deployer=`echo $line|awk '{print $2}'`
+    file_deployer=`echo $line|awk '{print $NF}'`
+    dir_=`dirname $file_deployer`
+    file_d=`basename $file_deployer`
+    # Check if $file_d exists
+    grep "${file_d}" /tmp/${search_peer}.Modify_sha1sum.time >/dev/null
+    if [[ "$?" = "0" ]]
+    then
+       # Check again
+       new_file_deployer=`convert_string ${file_deployer}`
+       grep "${new_file_deployer}" /tmp/${search_peer}.Modify_sha1sum.time >/dev/null
+       [[ "$?" = "0" ]] && {
+          line_sh=`grep "${new_file_deployer}" /tmp/${search_peer}.Modify_sha1sum.time`
+          modify_sh=`echo ${line_sh}|awk '{print $1}'`
+          sha1sum_sh=`echo ${line_sh}|awk '{print $2}'`
+          dir_sh=`echo ${line_sh}|awk '{print $NF}'`
+
+          # Check both modification time AND sha1sum
+          [[ "${modify_deployer}" -gt "${modify_sh}" && "${sha1sum_deployer}" != "${sha1sum_sh}" ]] && {
+             echo "jlpcp -ew ${search_peers} ${file_deployer} ${SPLUNK_APPS}/${file_deployer}"
+             #/usr/local/bin/jlpcp -ew ${search_peers} ${file_deployer} ${SPLUNK_APPS}/${file_deployer} >/dev/null
+          }
+       }
+    else
+       # Check if ${dir_} exist on ${search_peer}
+       grep "${dir_}" /tmp/${search_peer}.Modify_sha1sum.time >/dev/null
+       if [[ "$?" = "0" ]]
+       then
+          echo "jlpcp -ew ${search_peers} ${file_deployer} ${SPLUNK_APPS}/${file_deployer}"
+          #/usr/local/bin/jlpcp -ew ${search_peers} ${file_deployer} ${SPLUNK_APPS}/${file_deployer} >/dev/null
+       else
+          echo
+          echo "${dir_} DOES_NOT_EXIST on SH Deployer $(uname -n):/tmp/${search_head}.Modify_sha1sum.time"
+          echo
+       fi
+    fi
+  done
+}
+
+convert_string ()
+{
+ echo $1|sed 's/\//\\\//g'
+}
+
+##########
+# M A I N
+##########
+{
+  case $(uname -n) in
+  # $CLUSTER's All_RestAPI_SH_Deployer (Primary:ser21-010964/Backup:ser24-009735)
+  ser21-010964 | ser24-009735 )
+                              F5_fqdn=splunk-restapi.mycorp.com
+                              ;;
+  # $CLUSTER's splunk_SH_Deployer (ser10860some_loc)/splunk_SH_Deployer_Backup(ser10097loc2)
+                 ser10860some_loc )
+                              F5_fqdn=splunk-admin.mycorp.com
+                              ;;
+  esac
+
+  echo "START: $(date)"
+  echo "1. Identifying ${F5_fqdn} captaincy:"
+  get_captain
+  echo "${F5_fqdn} SH captain: ${captain}"
+
+  echo "2. Get a list of ${F5_fqdn} SH members:"
+  get_search_peers
+
+  echo "3. Generating a lookup .csv list from captain ${captain}:"
+  get_captain_apps_list 2>/dev/null
+  echo "OUTPUT: /tmp/${search_peer}.Modify_sha1sum.time"
+
+  echo "4. Generating a lookup .csv list on Deployer $(uname -n):"
+  get_deployer_apps_list
+  echo "OUTPUT: /tmp/deployer.Modify_sha1sum.time"
+
+  echo "5. Identifying new/updated lookups and push to SH cluster:"
+  update_SH_lookups
+  echo
+  echo "6. Changing UID:GID to ${uid_gid} on All Search Heads's ${SPLUNK_APPS}:"
+  echo "/usr/local/bin/jldsh -ew ${search_peers} \"cd ${SPLUNK_ETC} && chown -R ${uid_gid} apps\" >/dev/null"
+  echo "END: $(date)"
+} | tee ${LOG}/`basename $0`.${date_}
+echo
+echo "OUTPUT: ${LOG}/`basename $0`.${date_}"

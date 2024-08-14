@@ -1,0 +1,10 @@
+#!/bin/bash
+DISPATCH=/opt/splunk/var/run/splunk/dispatch
+{
+while [ 1 ]
+do
+  date
+  jldsh -eg splunk_multisite_indexers "cd $DISPATCH && echo *|wc -w"
+  sleep 1h
+done
+} | tee ./`basename $0`.OUT

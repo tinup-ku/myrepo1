@@ -1,0 +1,17 @@
+#!/bin/bash
+SPLUNK_HOME=/opt/splunk
+SHCLUSTER=$SPLUNK_HOME/etc/shcluster
+ES_DEPLOYER=/ELI/archive/ES_DEPLOYER
+PDC1_ES_DEPLOYER=ser14615some_loc
+PDC3_ES_DEPLOYER=ser14615loc2
+today=$(date "+%Y%m%d")
+#
+# Make a backup copy on ser14615loc2.some_loc.mycorp.com:/opt/splunk/etc/shcluster/apps
+#
+# 
+echo "Backing up $SHCLUSTER/apps to $ES_DEPLOYER/${today}.gz"
+ssh ser14615loc2 "su - ser_act.prod -c \"cd $SHCLUSTER;tar cvzf $ES_DEPLOYER/${today}.gz apps\""
+rsync -arv /opt/splunk/etc/shcluster/apps ser14615loc2.some_loc.mycorp.com:/opt/splunk/etc/shcluster/ 2>/dev/null
+
+# Cleanup $ES_DEPLOYER if > 5 days
+su - ser_act.prod -c "cd /ELI/archive/ES_DEPLOYER; find . -type f -mtime +5d -exec rm -f {} +"

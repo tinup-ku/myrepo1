@@ -1,0 +1,33 @@
+
+1. How to run a savedsearch, wami_mobile_sne_events
+{ curl -k -u admin https://splunk-restapi-qa.dev.mycorp.com:8089/servicesNS/svc.idwbdh/SCH_SNE_app/search/jobs/export -d search=" savedsearch wami_mobile_sne_events" -d output_mode=json; }|tail -1
+
+2. How to run a user search
+[root@s0678loc2 etc]# curl -k -u admin https://splunk-restapi-qa.dev.mycorp.com:8089/servicesNS/svc.idwbdh/SCH_SNE_app/search/jobs/export -d search="search index=sne sourcetype=sne_M_elilogs|stats count by splunk_server" -d earliest_time="-2m@m" -d latest_time="-0m@m" -d output_mode=csv
+Enter host password for user 'admin':
+"splunk_server",count
+"s3071bdv.csdev.corp",26
+"s3073pdv.csdev.corp",7
+"s3076bdv.csdev.corp",8
+"s3076pdv.csdev.corp",17
+"s3077pdv.csdev.corp",7
+"s3079pdv.csdev.corp",21
+"s3081pdv.csdev.corp",3
+s3082pdv,12
+"s3084bdv.csdev.corp",12
+"s3085bdv.csdev.corp",35
+"s3086pdv.csdev.corp",11
+"s3088pdv.csdev.corp",19
+"s3089pdv.csdev.corp",11
+"s3090pdv.csdev.corp",21
+"s3091bdv.csdev.corp",15
+"s3092pdv.csdev.corp",19
+"s3094bdv.csdev.corp",23
+"s3096bdv.csdev.corp",3
+[root@s0678loc2 etc]#
+
+3. How to show savedsearches content:
+curl -k -u admin https://splunk-restapi-qa.dev.mycorp.com:8089/servicesNS/nobody/SCH_SNE_app/saved/searches/wami_mobile_sne_events
+
+/svc.idwbdh
+curl -k -u admin https://splunk-restapi-qa.dev.mycorp.com:8089/servicesNS/svc.idwbdh/SCH_SNE_app/saved/searches/wami_mobile_sne_events

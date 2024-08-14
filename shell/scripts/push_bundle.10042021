@@ -1,0 +1,162 @@
+#!/bin/bash
+####################################################################################
+# This script utilizes `splunk apply shcluster-bundle` command running on Splunk
+# Search Head Cluster ${deployer} based on
+# https://docs.splunk.com/Documentation/Splunk/7.2.6/DistSearch/PropagateSHCconfigurationchanges
+# Once Splunk apps are ready to deploy to search head cluster and pushed from
+# https://bamboo.mycorp.com/project/viewProject.action?projectKey=SPOC
+#
+# Usage: (As Splunk service account)
+# 
+# `nohup push_bundle &`
+#
+# The script will run in the background. Once completed, the output will be sent to
+# Splunk Platform members, ${users_list}.
+####################################################################################
+# Written by user1 | T. O. S.
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%F_%H%M')
+env_=`uname -n|grep -o '...$'`
+deployer=$(uname -n)
+users_list="user1@mycorp.com,user2@mycorp.com,valerie.delossantos@mycorp.com,brian.s.nguyen@mycorp.com,steve.warburton@mycorp.com,satvikareddy.sathineni@mycorp.com,benjamin.albert@mycorp.com,jyothi.arapally@mycorp.com,hassan.bhatti@mycorp.com"
+
+case ${deployer} in
+   # Preprod
+   ser14744loc2  ) 
+               search_peer=ser10028loc2.some_loc.mycorp.com
+               ;;
+   # New Preprod SH
+   ser10982some_loc  )
+               search_peer=ser14343some_loc.some_loc.mycorp.com
+               ;;
+   # Prod
+   ser10860some_loc  )
+               search_peer=s3137some_loc.some_loc.mycorp.com
+               ;;
+   # Prod Splunk Weblogs Extract SH Deployer
+   ser10983some_loc  )
+               search_peer=ser14345loc2.some_loc.mycorp.com
+               ;;
+   # PROD ES
+   ser14615some_loc  )
+               search_peer=s3110loc2.some_loc.mycorp.com
+               ;;
+   # PROD ITSI
+   ser14744some_loc  )
+               search_peer=s0302some_loc.some_loc.mycorp.com
+               ;;
+   # DEV
+   cud2-008139  )
+               search_peer=cud1-011646.us.global.mycorp.com
+               ;;
+   # QA Core
+   cud1-008622 )
+               search_peer=cud1-008617.us.global.mycorp.com
+               ;;
+   # QA ES
+   cud2-006273 )
+               search_peer=cud1-008646.us.global.mycorp.com
+               ;;
+   # QA ITSI
+   cud1-008629 )
+               search_peer=cud1-008627.us.global.mycorp.com
+               ;;
+   # PDC1_TEST_SH_Search_Deployer
+   ser13278pdv  )
+               search_peer=ser13285pdv.dev.mycorp.com
+               ;;
+   # PDC3_Training_SH_Deployer
+   ser13277bdv  )
+               search_peer=ser13283pdv.dev.mycorp.com
+               ;;
+           * )
+               echo "$(uname -n) is not a Search Head Deployer. Abort."
+               exit
+               ;;
+esac
+
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+# Service Account only.
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 ) uid=ser_act.prod
+               key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                   ser2* ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           key=$prod
+                           ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=$dev
+                           ;;
+               esac
+               ;;
+esac
+if [[ "`whoami`" != "${uid}" ]]
+then
+   echo "Running `basename $0` as ${uid} only. Abort."
+   mailx -s "${HOSTNAME}:$PWD: Running `basename $0` as ${uid} only. Abort." ${users_list} < $PWD/nohup.out
+   exit
+fi
+
+if [[ -f /var/tmp/push_bundle.LCK ]]
+then
+   {
+     echo -n "push_bundle is running under PID: "
+     cat /var/tmp/push_bunble.PID
+     exit
+   } | tee /tmp/push_bundle.LCK.$$
+   mailx -s "`uname -n`:/usr/local/push_bundle. An attempt to run while push_bundle is running" ${users_list} < /tmp/push_bundle.LCK.$$
+else
+   touch /var/tmp/push_bundle.LCK
+
+   {
+   ${SPLUNK_BIN}/splunk login -auth admin:${key}
+   echo
+   echo "Pushing Deployment bundle to Search Head peers. This might take sometime..."
+   echo
+   echo "START: `date`"
+
+   # Add -preserve-lookups true -searchable true: 08/06/2019 
+   # https://docs.splunk.com/Documentation/Splunk/7.2.3/DistSearch/RestartSHC#Use_searchable_rolling_restart
+
+   #nohup ${SPLUNK_BIN}/splunk apply shcluster-bundle -target https://${search_peer}:8089 --answer-yes --no-prompt -preserve-lookups true -searchable true &
+
+   nohup ${SPLUNK_BIN}/splunk apply shcluster-bundle -target https://${search_peer}:8089 --answer-yes --no-prompt -preserve-lookups true &
+   job_pid=$!
+   echo "${job_pid}" > /var/tmp/push_bunble.PID
+   echo "Background process id for the job: ${job_pid}"
+   } 2>&1 | tee /var/tmp/`basename $0`.${date_}
+
+   # Background job complete then notify.
+   while [ 1 ]
+   do
+     # Every 3 minutes, check if push_bunble.PID is still running
+     ps -p `cat /var/tmp/push_bunble.PID` >/dev/null
+     if [[ "$?" != "0" ]]
+     then
+        grep 'Bundle has been pushed successfully to all the cluster members' /var/tmp/`basename $0`.${date_} >/dev/null
+        if [[ "$?" = "0" ]]
+        then
+          echo "END: `date`" >> /var/tmp/`basename $0`.${date_}
+          mailx -s "$(uname -n): Bundle has been pushed successfully to all the cluster members" ${users_list} < /var/tmp/`basename $0`.${date_}
+          rm -f /var/tmp/push_bundle.LCK
+          exit
+        else
+          echo "END: `date`" >> /var/tmp/`basename $0`.${date_}
+          mailx -s "$(uname -n): There's an issue with shcluster-bundle" ${users_list} < /var/tmp/`basename $0`.${date_}
+          rm -f /var/tmp/push_bundle.LCK
+          exit
+        fi
+     else
+        sleep 3m
+     fi
+   done
+fi

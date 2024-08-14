@@ -1,0 +1,38 @@
+#!/bin/bash
+# This is to remove the followings from #SPLUNK_LOCAL/server.conf
+# ----- cut here -----
+# [general]
+# site = site0
+
+# [replication_port://9886]
+
+# [shclustering]
+# conf_deploy_fetch_url = https://splunkdeployer.mycorp.com:8089
+# disabled = 0
+# mgmt_uri = https://ser14345some_loc.some_loc.mycorp.com:8089
+# pass4SymmKey = $1$IlaqsJSkMIXVjGdF
+# shcluster_label = prod_shcluster
+# id = 81FBC65F-DFC1-4FC5-B9D9-8AF85D1404C2
+# conf_replication_include.passwd = false
+# captain_is_adhoc_searchhead = true
+
+# [clustering]
+# master_uri = https://splunkmasternode.mycorp.com:8089
+# mode = searchhead
+# multisite = true
+# pass4SymmKey = $1$IlaqsJSkMIXVjGdF
+#
+# ----- cut here -----
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+date_=`date '+%Y%m%d'`
+
+cd ${SPLUNK_LOCAL} && {
+  # Make a backup
+  [[ -f server.conf ]] && {
+     cp -f server.conf server.conf.${date_}
+  
+     # Remove entries mentioned above
+     sed -i -e '/^site/d' -e '/\[replication_port/d' -e '/\[clustering/,/^$/d' -e '/\[shclustering/,/^$/d' server.conf
+  }
+}
+

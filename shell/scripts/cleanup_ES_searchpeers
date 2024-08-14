@@ -1,0 +1,68 @@
+#!/bin/bash
+ES_SH="
+s3110some_loc
+s3111some_loc
+s3111loc2
+s0978loc2
+s0160loc3
+s0161loc3
+s0162loc3
+s0180loc3
+s0181loc3"
+
+
+/opt/splunk/var/run/searchpeers
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s3110*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s3111*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0978loc2*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0160loc3*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0161loc3*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0162loc3*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0180loc3*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0181loc3*\" -print"|dshbak
+
+
+ITSI_SH="
+s0302some_loc
+s0303some_loc
+s0302loc2
+s0163loc3
+s0182loc3"
+
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0302*\" -print"|dshbak
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0303some_loc*\" -print"|dshbak
+
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0163loc3*\" -print"|dshbak
+jldsh -eg CD1_A_All_DC74_E-F_core_site12 "cd /opt/splunk/var/run/searchpeers;find . -type d -name \"s0182loc3*\" -print"|dshbak
+
+
+
+echo "1. Cleaning /opt/splunk/etc/peer-apps.old.bkp"
+[[ -f /opt/splunk/etc/peer-apps.old.bkp ]] && ls -l /opt/splunk/etc/peer-apps.old.bkp
+
+echo "2. Cleaning up old ES and ITSI Search artifacts"
+cd /opt/splunk/var/run/searchpeers && {
+  #find . -type d \( -name 's0302some_loc*' -o -name 's0303some_loc*' -o -name 's0163loc3*' -o -name 's0182loc3*' -o -name 's3110some_loc*' -o -name 's3111some_loc*' -o -name 's3111loc2*' -o -name 's0978loc2*' -o -name 's0160loc3*' -o -name 's0161loc3*' -o -name 's0162loc3*' -o -name 's0180loc3*' -o -name 's0181loc3*' \) -print
+  find . -type d \( -name 's0302some_loc*' -o -name 's0303some_loc*' -o -name 's0163loc3*' -o -name 's0182loc3*' -o -name 's3110some_loc*' -o -name 's3111some_loc*' -o -name 's3111loc2*' -o -name 's0978loc2*' -o -name 's0160loc3*' -o -name 's0161loc3*' -o -name 's0162loc3*' -o -name 's0180loc3*' -o -name 's0181loc3*' \) -exec ls -lR {} +|wc -l
+}
+echo
+echo "3. Cleaning all files/dirs in /opt/splunk/var/run/splunk/dispatch "
+cd /opt/splunk/var/run/splunk/dispatch && {
+   #find . -exec rm -rf {} +
+}
+
+echo "4. /opt/splunk, cleaning old diags and etc-splunk-8.1.5.tar.gz etc-splunk-9.0.4.1.tar.gz"
+
+cd /opt/splunk && {
+   rm -f diag* etc-splunk-8.1.5.tar.gz etc-splunk-9.0.4.1.tar.gz"
+}
+

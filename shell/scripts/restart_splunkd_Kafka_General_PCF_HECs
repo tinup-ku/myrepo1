@@ -1,0 +1,129 @@
+#!/bin/bash
+# Restart both Enterprise PCF ang General @6PM EST Monday
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+users_list="user1@mycorp.com,user2@mycorp.com,user4@mycorp.com,user3@mycorp.com,SivaKumar.Nakka@mycorp.com"
+PCF_HECs="ser21-012454
+ser21-012459
+ser21-012461
+ser21-012463
+ser21-012457
+ser21-012453
+ser21-012462
+ser21-012464
+ser21e-003103
+ser21e-003104
+ser21e-003105
+ser21e-003106
+ser21f-003081
+ser21f-003082
+ser21f-003083
+ser21f-003084
+ser22-011219
+ser22-011216
+ser22-011221
+ser22-011218
+ser22-011222
+ser22-011225
+ser22e-003071
+ser22e-003072
+ser22e-003073
+ser22e-003074
+ser22f-003059
+ser22f-003060
+ser22f-003061
+ser22f-003062
+ser22-011226
+ser22-011227
+ser24-007714
+ser24-007715
+ser24-010340
+ser24-010341
+ser24-010342
+ser24-010343
+ser24-010344
+ser24-010345
+ser24-007716
+ser24-007717
+ser24-010331
+ser24-010333
+ser24-010334
+ser24-010335
+ser24-010336
+ser24-010337"
+
+General_HECs="ser14346some_loc
+ser14347some_loc
+ser14348some_loc
+ser14349some_loc
+s0471some_loc
+s0472some_loc
+s1018some_loc
+s1019some_loc
+ser14346loc2
+ser14347loc2
+ser14348loc2
+ser14349loc2
+s0664loc2
+s0665loc2
+s0666loc2
+s0667loc2
+ser11142some_loc
+ser11143some_loc
+ser10831loc2
+ser10832loc2"
+
+
+{
+date
+echo "--------------------------------------------------------------------"
+echo "1. Restarting All_HEC_Confluent_Enterprise_PCF_Kafka_Connect splunkd"
+echo "--------------------------------------------------------------------"
+echo "########"
+echo "BEFORE:"
+echo "########"
+echo '                             total       used       free       shared      buff/cache   available'
+jldsh -ec $CLUSTER -eg All_HEC_Confluent_Enterprise_PCF_Kafka_Connect "free -h|grep ^Mem"
+echo
+echo "Restarting splunkd on HEC's All_HEC_Confluent_Enterprise_PCF_Kafka_Connect"
+for hec in ${PCF_HECs}
+do
+  jldsh -ew $hec "systemctl restart Splunkd;sleep 10;pgrep splunkd|wc -l"
+done
+echo
+date
+echo "########"
+echo "AFTER:"
+echo "########"
+echo '                             total       used       free       shared      buff/cache   available'
+jldsh -ec $CLUSTER -eg All_HEC_Confluent_Enterprise_PCF_Kafka_Connect "free -h|grep ^Mem"
+echo
+date
+echo
+echo "---------------------------------------------------------------------------------------"
+echo "2. Restarting ITRS HECs All_HEC_Confluent_Enterprise_General_Kafka_Connect_PROD_Cluster"
+echo "---------------------------------------------------------------------------------------"
+echo "########"
+echo "BEFORE:"
+echo "########"
+echo '                          total         used       free       shared   buff/cache   available'
+jldsh -ec $CLUSTER -eg All_HEC_Confluent_Enterprise_General_Kafka_Connect_PROD_Cluster "free -h|grep ^Mem"
+echo
+echo "Restarting splunkd on HEC's All_HEC_Confluent_Enterprise_PCF_Kafka_Connect"
+for hec in ${General_HECs}
+do
+  jldsh -ew $hec "systemctl restart Splunkd;sleep 10;pgrep splunkd|wc -l"
+  sleep 10
+done
+echo
+date
+echo "########"
+echo "AFTER:"
+echo "########"
+echo '                          total         used       free       shared   buff/cache   available'
+jldsh -ec $CLUSTER -eg All_HEC_Confluent_Enterprise_General_Kafka_Connect_PROD_Cluster "free -h|grep ^Mem"
+echo
+date
+echo
+
+
+} | tee /var/tmp/`basename $0`.LOG|mailx -s "Final TG3 Preparation | PROD Enterprise PCF + General HECs splunkd restart LOG " ${users_list}

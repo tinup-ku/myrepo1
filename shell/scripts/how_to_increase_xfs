@@ -1,0 +1,65 @@
+Increase /dev/mapper/rootvg-rootlv by 104GB
+BEFORE:
+[root@s3138some_loc ~]# xfs_info /
+meta-data=/dev/mapper/rootvg-rootlv isize=512    agcount=16, agsize=507840 blks
+         =                       sectsz=512   attr=2, projid32bit=1
+         =                       crc=1        finobt=0 spinodes=0
+data     =                       bsize=4096   blocks=8125440, imaxpct=25
+         =                       sunit=64     swidth=64 blks
+naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+log      =internal               bsize=4096   blocks=3968, version=2
+         =                       sectsz=512   sunit=64 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+
+[root@s3138some_loc ~]# df -hP /
+Filesystem                 Size  Used Avail Use% Mounted on
+/dev/mapper/rootvg-rootlv   31G  7.2G   24G  24% /
+
+[root@s3138some_loc ~]# pvs
+  PV         VG     Fmt  Attr PSize   PFree
+  /dev/sda3  rootvg lvm2 a--  183.62g 124.62g
+
+
+Steps: 
+
+lvextend -L +104GB /dev/mapper/rootvg-rootlv
+OUTPUT:
+  Size of logical volume rootvg/rootlv changed from 31.00 GiB (992 extents) to 135.00 GiB (4320 extents).
+  Logical volume rootvg/rootlv successfully resized.
+
+xfs_growfs /dev/mapper/rootvg-rootlv
+OUTPUT:
+meta-data=/dev/mapper/rootvg-rootlv isize=512    agcount=16, agsize=507840 blks
+         =                       sectsz=512   attr=2, projid32bit=1
+         =                       crc=1        finobt=0 spinodes=0
+data     =                       bsize=4096   blocks=8125440, imaxpct=25
+         =                       sunit=64     swidth=64 blks
+naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+log      =internal               bsize=4096   blocks=3968, version=2
+         =                       sectsz=512   sunit=64 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+data blocks changed from 8125440 to 35389440
+
+AFTER:
+[root@s3138some_loc ~]# df -hP /
+Filesystem                 Size  Used Avail Use% Mounted on
+/dev/mapper/rootvg-rootlv  135G  7.2G  128G   6% /
+
+[root@s3138some_loc ~]# pvs
+  PV         VG     Fmt  Attr PSize   PFree
+  /dev/sda3  rootvg lvm2 a--  183.62g 20.62g
+
+[root@s3138some_loc ~]# xfs_info /
+meta-data=/dev/mapper/rootvg-rootlv isize=512    agcount=70, agsize=507840 blks
+         =                       sectsz=512   attr=2, projid32bit=1
+         =                       crc=1        finobt=0 spinodes=0
+data     =                       bsize=4096   blocks=35389440, imaxpct=25
+         =                       sunit=64     swidth=64 blks
+naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+log      =internal               bsize=4096   blocks=3968, version=2
+         =                       sectsz=512   sunit=64 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+
+
+
+

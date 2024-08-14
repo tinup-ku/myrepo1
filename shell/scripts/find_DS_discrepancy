@@ -1,0 +1,26 @@
+#!/bin/ksh
+echo -n "Enter filename? "
+read file_
+{
+#for node in `cat /tmp/Tony.list11`
+for node in `cat ${file_}`
+do
+  find_pdc1=$(ssh ser10973some_loc "cd /opt/splunk/etc/apps;find . -type f -exec grep -il "${node}" {} +" 2>/dev/null)
+  find_loc5=$(ssh ser24-00539 "cd /opt/splunk/etc/apps;find . -type f -exec grep -il "${node}" {} +" 2>/dev/null)
+  if [[ -n "${find_pdc1}" && -z "${find_loc5}" ]]
+  then
+     echo "${node}: OK"
+  else
+     if [[ -z "${find_pdc1}" && -z "${find_loc5}" ]] 
+     then
+        echo "${node}: NEED_TO_POINT_TO_DC4"
+     else
+        [[ -z "${find_pdc1}" && -n "${find_loc5}" ]] && echo "${node}: OK"
+
+     fi
+
+  fi
+
+done
+} | tee /tmp/`basename ${file_}`.OUT
+echo "OUTPUT:/tmp/`basename ${file_}`.OUT"

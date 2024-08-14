@@ -1,0 +1,32 @@
+#!/bin/bash
+{
+SPLUNK_HOME=/opt/splunk
+
+echo -n "Enter remote hostname (ser11989some_loc)? "
+read node
+echo -n "Enter Destination where app will be copied to, ie, (/opt/splunk/etc/shcluster/apps) "
+read dest
+
+# Create $dest if doesn't exist.
+
+jldsh -ew $node "[[ ! -d $dest ]] && mkdir -p $dest"
+echo
+echo "Remote hostname: $node"
+echo "Destination: $node:$dest"
+echo
+
+cat SH_app.list | \
+while read line
+do
+  sh_=`echo $line|awk '{print $1}'`
+  app_=`echo $line|awk '{print $NF}'`
+  echo "Copying ${sh_}:${SPLUNK_HOME}/etc/apps/${app_} and ${SPLUNK_HOME}/etc/users/*/${app_} to ${node}:$dest"
+  # Get etc/apps/${app} and etc/users/*/${app}
+  ssh -n ${sh_} "cd ${SPLUNK_HOME}/etc;find  apps/${app_} users/*/${app_} -print|cpio -oBc" 2>/dev/null|ssh ${node} "cd $dest;cpio -iBcdmvu" 2>/dev/null
+  # Get /etc/users/*/${app}
+done
+  ssh $node "cd $dest;find . -type f ! -perm -u=w -exec ls -ld {} + |tee list.before" 2>/dev/null
+  ssh $node "cd $dest;find . -type f ! -perm -u=w -exec chmod u+w {} +" 2>/dev/null
+  ssh $node "cd $dest;awk '{print $NF}' list.before|xargs -n1 ls -l > list.after" 2>/dev/null
+} | tee `basename $0.OUT`
+

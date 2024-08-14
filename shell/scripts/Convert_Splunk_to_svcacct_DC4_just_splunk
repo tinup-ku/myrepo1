@@ -1,0 +1,128 @@
+#!/bin/ksh
+########################################################################################
+# This script converts splunk local, ie, root|splunk, to AD service account
+# DEV/QA: ser_act.dev
+# PrePROD/PROD: ser_act.prod
+# Based on
+# https://docs.splunk.com/Documentation/Splunk/7.2.3/Admin/RunSplunkassystemdservice#Configure_systemd_manually
+# Also ${SPLUNK_ETC}/splunk-launch.conf is also updated with
+# SPLUNK_DB=/opt/splunkindex_data
+# SPLUNK_DBHOT=/opt/splunkindex_data, and
+# SPLUNK_OS_USER=ser_act.prod in PrePROD + PROD, or
+# SPLUNK_OS_USER=ser_act.dev in TEST/DEV/QA
+########################################################################################
+# Written by user1 | T.O.S
+SPLUNK_ETC=/opt/splunk/etc
+env_=`uname -n|grep -o '...$'`
+
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               gid=unx_60231_splunk_admin_dev
+               ;;
+   some_loc | loc2 | loc3 ) uid=ser_act.prod
+               gid=unx_9998_access
+               ;;
+           * )
+               case `uname -n` in
+                   ser2* ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           ;;
+                   cud*| cut4* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                           ;;
+               esac
+esac
+
+
+{
+
+convert_to_service_account ()
+{
+  # Convert splunk to service account
+  echo "Convert /opt/splunk to service account: ${uid}:${gid}"
+
+  echo "Updating ${SPLUNK_ETC}/splunk-launch.conf"
+  # Add SPLUNK_DB=/opt/splunkindex_data and /opt/splunkindexhot_data
+  grep '^SPLUNK_DB=/opt/splunkindex_data' ${SPLUNK_ETC}/splunk-launch.conf >/dev/null
+  [[ "$?" != "0" ]] && sed -i '/SPLUNK_DB=/aSPLUNK_DB=/opt/splunkindex_data\nSPLUNK_DBHOT=/opt/splunkindexhot_data' ${SPLUNK_ETC}/splunk-launch.conf
+  
+  echo -e "\nSPLUNK_OS_USER=${uid}" >> ${SPLUNK_ETC}/splunk-launch.conf
+
+
+  echo "Changing /opt/splunk UID:GID to ${uid}:${gid}"
+  [[ -d /opt/splunk ]] && cd /opt && chown -R ${uid}:${gid}  splunk
+
+  [[ ! -d /opt/splunkindex_data ]] && mkdir -p /opt/splunkindex_data
+  chown -R ${uid}:${gid} /opt/splunkindex_data
+
+  [[ ! -d /opt/splunkindexhot_data ]] && mkdir -p /opt/splunkindexhot_data
+  chown -R ${uid}:${gid} /opt/splunkindexhot_data
+
+  # Remove local splunk entry.
+  echo "Remove splunk local entry in passwd,group,shadow, and gshadow"
+  sed -i '/^splunk/d' /etc/passwd /etc/group /etc/shadow /etc/gshadow
+
+  chmod 500 /opt/splunk/bin/splunk
+  chmod u+s /opt/splunk/bin/splunk
+  
+  # This ONLY applies to RHEL7 AND Splunk 7.2.x
+  [[ `uname -r|awk -F. '{print $1}'` -ge 3 ]] && {
+     # Check /etc/systemd/system/Splunkd.service under [Service]
+     # Add to [Service] stanza:
+     # PROD:
+     # User=ser_act.prod
+     # Group=unx_9998_access
+     #
+     # DEV/QA:
+     # User=ser_act.dev
+     # Group=unx_60231_splunk_admin_dev
+     #
+     if [[ -f /etc/systemd/system/Splunkd.service ]]
+     then
+        echo "Adding User=${uid} and Group=${gid} to /etc/systemd/system/Splunkd.service [Service] stanza"
+        echo
+        sed -i "/\[Service/aUser=${uid}\nGroup=${gid}" /etc/systemd/system/Splunkd.service 
+        # Add the followings to /etc/systemd/system/Splunkd.service:
+        # PermissionsStartOnly=true
+        # ExecStartPost=/bin/bash -c "chown -R ${uid}:${gid} /sys/fs/cgroup/cpu/system.slice/%n"
+        # ExecStartPost=/bin/bash -c "chown -R ${uid}:${gid} /sys/fs/cgroup/memory/system.slice/%n"
+        #
+        sed -i "/CPUShares=1024/aPermissionsStartOnly=true\nExecStartPost=/bin/bash -c \"chown -R ${uid}:${gid} /sys/fs/cgroup/cpu/system.slice/%n\"\nExecStartPost=/bin/bash -c \"chown -R ${uid}:${gid} /sys/fs/cgroup/memory/system.slice/%n\"" /etc/systemd/system/Splunkd.service
+
+        echo "Enable Splunkd.service"
+        systemctl enable Splunkd
+     else
+        echo "Starting Splunk via System V init.d"
+        service splunk start
+     fi
+  }
+}
+
+########
+# MAIN
+########
+
+[[ ! -d /${uid} ]] && {
+    echo "Creating ${uid} home: /${uid}"
+    mkdir /${uid}
+    chown ${uid}:${gid} /${uid}
+ }
+
+# Check if ser_act.prod is seen on search head
+/opt/quest/bin/vastool user checkaccess ${uid} |grep '^ALLOWED' >/dev/null
+if [[ "$?" = "0" ]]
+then
+  echo "Stop Splunk then convert to service account ${uid}:${gid}"
+# service splunk stop
+  # Remove /opt/splunk/var/run/splunk/splunkd.pid since it's root owned.
+  rm -f /opt/splunk/var/run/splunk/splunkd.pid
+# service splunk stop
+  echo "convert_to_service_account"
+  convert_to_service_account
+  echo "Verify: `ls -ld /opt/splunk`"
+  echo "Verify: `ls -ld /opt/splunk/bin/splunk`"
+else
+  echo "${uid}:${gid} is not visible in `uname -n`. Abort."
+  exit
+fi
+} | tee /root/`basename $0`.OUT

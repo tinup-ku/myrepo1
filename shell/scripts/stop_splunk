@@ -1,0 +1,44 @@
+#!/bin/ksh
+# Splunk Service account:
+#ser_act.prod:VAS:500327:9998:ser_act.prod:/ser_act.prod:/bin/ksh
+#ser_act.dev:VAS:562314:60231:ser_act.dev:/ser_act.dev:/bin/ksh
+date_=$(date '+%a%H%M_%m%d%Y')
+
+# Disable splunk at start up
+{
+
+env_=`uname -n`
+typeset -R3 env_
+
+case ${env_} in
+   pdv | bdv ) UID=ser_act.dev
+               ;;
+   some_loc | loc2 | loc3 ) UID=ser_act.prod
+               ;;
+esac
+
+echo "START: `date`"
+echo "Disable splunk at boot time"
+cd /etc/init.d && [[ -x splunk ]] && mv -f splunk Splunk
+echo
+echo "IMPORTANT: Please wait until the command line prompt is back."
+echo "           `uname -n` is reassigning its buckets to its peers in the cluster."
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+echo
+su - ${UID} -c "/opt/splunk/bin/splunk offline -auth admin:${prod}"
+echo
+echo "END of $0 : `date`"
+echo
+echo "This Indexer, `uname -n`, is ready for maintenance/OS Patching work."
+echo
+echo "################## ATTENTION ATTENTION ATTENTION ###############"
+echo "#      Once Patching or Maintenance Completed, please run      #"
+echo "#                                                              #"
+echo "#                      re-enable_splunk                        #"
+echo "################################################################"
+echo
+}| tee /var/tmp/`basename $0`.${date_}.OUT.$$
+
+mailx -s "splunk_offline output|`uname -n`:/var/tmp/`basename $0`.${date_}.OUT.$$" user1@mycorp.com,user2@mycorp.com < /var/tmp/`basename $0`.${date_}.OUT.$$

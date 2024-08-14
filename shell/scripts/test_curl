@@ -1,0 +1,1 @@
+curl -s -k -u admin:pR0D@dm1nuS3R https://splunk-restapi.mycorp.com:8089/services/search/jobs/export -d search="search index=_internal earliest=-1m | fields _raw" -d output_mode='raw' > /tmp/test.log

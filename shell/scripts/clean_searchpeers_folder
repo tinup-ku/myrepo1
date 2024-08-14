@@ -1,0 +1,27 @@
+#!/bin/bash
+month=`date '+%b'`
+last_year=`date '+%Y' -d "360 day ago"`
+
+echo month=$month
+
+cd /opt/splunk/var/run/searchpeers && {
+  folder=`ls -ltr|grep ${month}|grep -v ${last_year}|head -1|awk '{print $NF}'`
+  [[ -z "$folder" ]] && {
+     echo "`uname -n`:/opt/splunk/var/run/searchpeers/$folder is EMPTY. Abort"
+     exit
+  }
+  echo folder=${folder}
+  ls -ld $folder
+  {
+   echo "`uname -n`: List of old directories/files need to be removed from /opt/splunk/var/run/searchpeers:"
+   echo
+   find . \( -type d -o -type f \) ! -newer ${folder} -maxdepth 1 -exec ls -ld {} +
+  } > /tmp/searchpeers_cleanup.list
+  echo "Output: /tmp/searchpeers_cleanup.list: `wc -l /tmp/searchpeers_cleanup.list|awk '{print $1}'` lines"
+  echo
+  echo "Cleaning up old directories/files in /tmp/searchpeers_cleanup.list"
+  [[ -f /tmp/searchpeers_cleanup.list ]] && {
+     [[ "`wc -l /tmp/searchpeers.list|awk '{print $1}'`" -gt 5 ]] && \
+      find . \( -type d -o -type f \) ! -newer ${folder} -exec rm -rf {} + >/dev/null 2>&1
+  }
+}

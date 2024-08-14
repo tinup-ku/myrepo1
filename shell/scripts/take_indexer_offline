@@ -1,0 +1,115 @@
+#!/bin/ksh
+##############################################################################
+# https://jira.mycorp.com/browse/TOS-10248
+# This script is to decommission a Splunk Indexer in a multisite index
+# cluster.
+# Steps:
+#  1. Execute splunk offline --enforce-counts on the indexer
+#  2. Rename splunk start up to /etc/init.d/Splunk
+#     Note:
+#     systemctl disable Splunkd for systemD 
+#  3. Rename ${SPLUNK_BIN}/splunk to ${SPLUNK_BIN}/splunk.DISABLED 
+#  4. Rename ${SPLUNK_LOCAL}/server.conf to server.conf.DISABLED
+#  5. Show instructions on how-to remove Indexer's GID from its Master cluster
+#  6. Email user1/user2 on CRQ and Indexer name for record tracking.
+##############################################################################
+# user_ | T O S Platform Splunk
+SPLUNK_BIN=/opt/splunk/bin
+SPLUNK_ETC=/opt/splunk/etc
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+date_=$(date '+%F_%H%M')
+users_list="user1@mycorp.com"
+#users_list="user1@mycorp.com,user2@mycorp.com,user4@mycorp.com,user3@mycorp.com,SivaKumar.Nakka@mycorp.com,bharat.devagiri@mycorp.com,thirumalesh.vanguri@mycorp.com,ramakrishna.manthri@mycorp.com,madhusudhanreddy.ettedi@mycorp.com"
+
+
+echo -n "Enter [CRQ|INC]#? "
+read CRQ
+echo -n "Enter Indexer name? "
+read Indexer
+env_=`echo ${Indexer}|grep -o '...$'`
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               gid=unx_60231_splunk_admin_dev
+               key=${dev}
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=ser_act.prod
+                     gid=unx_9998_access
+                     key=${prod}
+                     ;;
+                 * )
+                     case ${Indexer} in
+                           ser2* )
+                                uid=ser_act.prod
+                                gid=unx_9998_access
+                                key=${prod}
+                                ;;
+                            cud*| cut* )
+                                uid=ser_act.dev
+                                gid=unx_60231_splunk_admin_dev
+                                key=${dev}
+                                ;;
+                     esac
+                     ;;
+esac
+
+guid=`ssh ${Indexer} "cd ${SPLUNK_ETC};awk '/guid/{print \$NF}' instance.cfg" 2>/dev/null`
+guid=`echo $guid|awk '{print $NF}'`
+
+master_url=`ssh -q ${Indexer} "cd ${SPLUNK_LOCAL};grep -A10 '^\[clustering' server.conf|grep  ^master_uri|awk '{print \$NF}'" 2>/dev/null`
+master_url=`echo ${master_url}|sed 's/8089/8000/g'`
+
+{
+echo
+echo "CRQ=${CRQ} uid=$uid Indexer=$Indexer"
+echo
+# 1. As service account, ser_act.[prod|dev], run 
+#   /opt/splunk/bin/splunk offline --enforce-counts
+date
+echo "1. Remove ${Indexer} from Index Cluster"
+if [[ ${uid} = "root" ]]
+then
+    ssh ${Indexer} "nohup ${SPLUNK_BIN}/splunk offline --enforce-counts -auth admin:${key} &" 2>/dev/null
+else
+    #jldsh -ew ${Indexer} "su - ${uid} -c \"nohup ${SPLUNK_BIN}/splunk offline --enforce-counts -auth admin:${key} & \""
+    jldsh -ew ${Indexer} "su - ${uid} -c \"${SPLUNK_BIN}/splunk offline --enforce-counts -auth admin:${key}  \""
+fi
+date
+echo
+# 2. Disable splunk at start up
+# mv -f /etc/init.d/splunk /etc/init.d/Splunk
+echo "2. Disable Splunkd.service via \`systemctl disable Splunkd\`"
+ssh ${Indexer} "cd /etc/init.d && [[ -f splunk ]] && mv -f splunk Splunk"  2>/dev/null
+ssh ${Indexer} "cd /etc/systemd/system && [[ -f Splunkd.service ]] && systemctl disable Splunkd"  2>/dev/null
+echo
+# 3. Rename splunk binary
+# cd /opt/splunk/bin && mv -f splunk splunk.DISABLED
+echo "3. Rename splunk binary to splunk.DISABLED"
+ssh ${Indexer} "cd ${SPLUNK_BIN} && mv -f splunk splunk.DISABLED" 2>/dev/null
+
+echo
+# 4. rename /opt/splunk/etc/system/local/server.conf to server.conf.DISABLED
+echo "4. Rename ${SPLUNK_LOCAL}/server.conf to server.conf.DISABLED"
+ssh -q ${Indexer} "cd ${SPLUNK_LOCAL} && mv -f server.conf server.conf.DISABLED" 2>/dev/null
+[[ "$?" != "0" ]] && \
+   echo "ERROR: ${Indexer} ssh FAILED. Make sure to follow up with ITO on ${CRQ} immediately to prevent data loss on indexer."
+echo 
+echo "5. On ${Indexer}:/opt/splunk/var/log/splunk, \`tail -f splunkd.log |grep 'All pipelines finished'\` to ensure replication completed and splunk is down"
+echo
+echo "6. Log into Cluster Master ${master_url}. As ${uid},"
+echo
+echo "NOTE:"
+echo "Wait until Indexer's status changing from Decomissioning to Graceful shutdown before executing the command below:"
+echo "${SPLUNK_BIN}/splunk remove cluster-peers -peers ${guid} -auth admin:XXXXXXXXXX"
+
+} | tee /root/SPLUNK_OFFLINE_DECOMM/${CRQ}_${Indexer}.offline
+echo "Update $CLUSTER to comment out $Indexer"
+sed -ie "s/^${Indexer}/#${Indexer} ${CRQ} ${date_}/g" $CLUSTER
+
+# Email jasper + user2 + Punit
+echo "Notifying user2/user1/Punit..."
+mailx -s "Remedy Ticket: ${CRQ} | ${Indexer} Decommissioning `date '+%c'`" ${users_list} < /root/SPLUNK_OFFLINE_DECOMM/${CRQ}_${Indexer}.offline

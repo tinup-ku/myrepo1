@@ -1,0 +1,183 @@
+#!/bin/bash
+CLUSTER=/usr/local/share/cluster/splunk.cluster
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+date_=`date '+%Y%m%d'`
+
+show_SH_LUMP ()
+{
+  echo
+  echo "Below are ${CLUSTER}'s LUMP definition:"
+  echo
+  echo -e "################################################################"
+  case $1 in
+     D|d )
+          echo -e "\t${bold_yellow}1${reset_color}. All_Training_SH"
+          echo -e "\t${bold_yellow}2${reset_color}. All_TEST_Search_SH"
+          echo -e "\t${bold_yellow}3${reset_color}. All_DEV_restAPI_SH"
+          echo -e "\t${bold_yellow}4${reset_color}. All_PDC13_DEV_SH"
+          echo -e "\t${bold_yellow}5${reset_color}. Search Heads/Mngt nodes not defined in ${bold_yellow}1${reset_color}-${bold_yellow}4${reset_color} above"
+          UID_=ser_act.dev
+          ;;
+     Q|q )
+          echo -e "\t${bold_yellow}1${reset_color}. All_QA_Standalone_SH"
+          echo -e "\t${bold_yellow}2${reset_color}. All_QA_ES_SH_cluster"
+          echo -e "\t${bold_yellow}3${reset_color}. All_QA_ITSI_SH_cluster"
+          echo -e "\t${bold_yellow}4${reset_color}. All_QA_restAPI_SH"
+          echo -e "\t${bold_yellow}5${reset_color}. All_QA_SH_cluster"
+          echo -e "\t${bold_yellow}6${reset_color}. All_QA_Management_servers"
+          echo -e "\t${bold_yellow}7${reset_color}. Search Heads/Mngt nodes not defined in ${bold_yellow}1${reset_color}-${bold_yellow}6${reset_color} above"
+          UID_=ser_act.dev
+          ;;
+     P|p )
+          echo -e "\t${bold_yellow}1${reset_color}. All_Weblogs_SH"
+          echo -e "\t${bold_yellow}2${reset_color}. splunk_ITSI_SH"
+          echo -e "\t${red}3${reset_color}. splunk_ES_SH ${red}RETIRED${reset_color}"
+          echo -e "\t${bold_yellow}4${reset_color}. All_RestAPI_SH_cluster"
+          echo -e "\t${bold_yellow}5${reset_color}. splunk_preprod_SH_cluster"
+          echo -e "\t${bold_yellow}6${reset_color}. All_splunk_multisite_SH"
+          echo -e "\t${bold_yellow}Q|q${reset_color}. Quit/Exit"
+          UID_=ser_act.prod
+          ;;
+  esac
+  echo -e "################################################################"
+  echo
+}
+
+get_captain ()
+{
+  . /.key
+  echo ${F5_fqdn}|grep 'dev' >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+    key=${dev}
+  else
+    key=${prod}
+  fi
+  captain=`curl -k -u admin:${key} https://$1:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+}
+
+show_SH_members ()
+{
+ echo
+ echo -e "Below are all members in ${bold_yellow}$LUMP${reset_color} SH cluster:"
+ all_search_heads=$(curl -k -u admin:${key} https://$1:8089/services/shcluster/captain/members 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g')
+ echo "${all_search_heads}"
+}
+
+initiate_RR_on_captain ()
+{
+ echo
+ echo -en "Inititate a Rolling Restart on ${bold_yellow}$LUMP${reset_color} cluster (${green}Y${reset_color}|${red}N${reset_color}|Q)? "
+ read ans
+ case ${ans} in
+      Y|y )
+           ssh $1 "su - ${UID_} -c \"/opt/splunk/bin/splunk rolling-restart shcluster-members -auth admin:${key}\"" 2>/dev/null
+           echo 
+           echo -e "Now you can check status as ${bold_yellow}${UID_}${reset_color} on SH captain ${bold_yellow}${captain}${reset_color}. As root,"
+           echo 
+           echo -e "${bold_yellow}watch -c -n15 \"show_SHC_rolling_restart_status 2>/dev/null\"${reset_color}"
+           ;;
+     N|n )
+           continue
+           ;;
+        * )
+           echo "Good Bye"
+           break
+           ;;
+ esac
+ echo
+}
+
+############
+# M A I N
+############
+
+echo
+echo "Perform a Rolling Restart on Search Head Cluster"
+echo -en "Is it [${bold_yellow}D${reset_color}]EV, [${bold_yellow}Q${reset_color}]A, or [${bold_yellow}P${reset_color}]ROD? "
+read env_
+
+case ${env_} in
+     D|d|Q|q )
+               echo "DEV/QA is under construction. Instead, run"
+               echo -e "ser10966some_loc:/root/scripts/${bold_yellow}shcluster_rolling_restart.DEV${reset_color}"
+               ;;
+         P|p )
+
+while [ 1 ]
+do
+   show_SH_LUMP ${env_}
+   echo -en "Enter ${bold_yellow}numeric${reset_color} value represents SH Cluster to restart Splunkd? " 
+   read num_
+   case $num_ in
+              1 ) LUMP=All_Weblogs_SH
+                  F5_fqdn=splunk-extracts.mycorp.com
+                  get_captain ${F5_fqdn}
+                  show_SH_members ${captain}
+                  echo captain=$captain
+                  initiate_RR_on_captain ${captain}
+                  ;;
+              2 ) LUMP=splunk_ITSI_SH
+                  F5_fqdn=splunk-itsi.mycorp.com
+                  get_captain ${F5_fqdn}
+                  show_SH_members ${captain}
+                  echo captain=$captain
+                  initiate_RR_on_captain ${captain}
+                  ;;
+              3 ) #LUMP=splunk_ES_SH
+                  #F5_fqdn=splunk-es.mycorp.com
+                  #get_captain ${F5_fqdn}
+                  #show_SH_members ${captain}
+                  #echo captain=$captain
+                  #initiate_RR_on_captain ${captain}
+                  echo
+                  echo -e "${red}ES Search Head Cluster's no longer in Service.${reset_color}"
+                  ;;
+              4 ) LUMP=All_RestAPI_SH_cluster
+                  F5_fqdn=splunk-restapi.mycorp.com
+                  get_captain ${F5_fqdn}
+                  show_SH_members ${captain}
+                  echo captain=$captain
+                  initiate_RR_on_captain ${captain}
+                  ;;
+              5 ) LUMP=splunk_preprod_SH_cluster
+                  F5_fqdn=splunk-preprod.mycorp.com
+                  get_captain ${F5_fqdn}
+                  show_SH_members ${captain}
+                  echo captain=$captain
+                  initiate_RR_on_captain ${captain}
+                  ;;
+              6 ) LUMP=All_splunk_CORE_multisite_SH
+                  F5_fqdn=splunk-admin.mycorp.com
+                  get_captain ${F5_fqdn}
+                  show_SH_members ${captain}
+                  echo captain=$captain
+                  initiate_RR_on_captain ${captain}
+                  ;;
+#             7 ) LUMP=NIL
+#                 ;;
+              * )
+                  echo "Good Bye"
+                  exit
+                  ;;
+   esac
+
+   echo
+   echo -en "Continue (${bold_yellow}Y${reset_color}|${bold_yellow}N${reset_color})? "
+   read ans_
+   case ${ans_} in
+                 Y|y )
+                       continue
+                       ;;
+                   * )
+                       echo "Good Bye"
+                       exit
+                       ;;
+   esac
+done
+               ;;
+esac

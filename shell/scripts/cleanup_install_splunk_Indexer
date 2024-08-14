@@ -1,0 +1,200 @@
+#!/bin/ksh
+####################################################################
+# This script performs the followings
+# 1. Remove current splunk along with remnanes in /opt/splunk then 
+#    install a fresh Enterprise splunk 7.2.6
+# 2. Recreate splunk Hot LVM, /opt/splunkindexhot_data
+# 3. Recreate splunk Cold LVM, /opt/splunkindex_data
+#
+# The effort is based on https://jira.mycorp.com/browse/TOS-12372
+# Phase 2 - Logical Move of IDX in both PDC1/PDC3 for Site 1 / Site 
+# which is a subset of main
+# https://jira.mycorp.com/browse/TOS-11916 
+# (Splunk Indexer Site to Core alignment)
+####################################################################
+# Written by user1 | TOS Platform A
+SPLUNK_HOME=/opt/splunk
+SPLUNK_ETC=/opt/splunk/etc
+SPLUNK_BIN=${SPLUNK_HOME}/bin
+SPLUNK_LOCAL=${SPLUNK_HOME}/etc/system/local
+env_=`uname -n|grep -o '...$'`
+date_=$(date '+%a%H%M_%m%d%Y')
+{
+
+get_key ()
+{
+  {
+    eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+  } 2>/dev/null
+  # Service Account only.
+  case ${env_} in
+     pdv | bdv ) uid=ser_act.dev
+                 key=$dev
+                 ;;
+     some_loc | loc2 | loc3 ) uid=ser_act.prod
+                       gid=unx_9998_access
+                       key=$prod
+                 ;;
+             * )
+                 case `uname -n` in
+                     ser2* ) uid=ser_act.prod
+                             gid=unx_9998_access
+                             key=$prod
+                             ;;
+                     cud*| cut* ) uid=ser_act.dev
+                                    gid=unx_60231_splunk_admin_dev
+                                    key=$dev
+                             ;;
+                 esac
+                 ;;
+  esac
+}
+
+
+# Check if splunk installed
+echo "1. Uninstall and Clean up /opt/splunk"
+rpm -q splunk >/dev/null
+[[ "$?" = "0" ]] && {
+   # Check if splunkd running
+   ps -ef|grep '[s]plunk' >/dev/null 2>&1
+   [[ "$?" = "0" ]] && {
+     user=`ls -ld ${SPLUNK_HOME}|awk '{print $3}'`
+     [[ "${user}" = "splunk" ]] && user=root
+     echo -n "Stop splunkd running as ${user}. Are your sure (Y|N)? "
+     read ans
+     case ${ans} in
+         Y|y )
+              pgrep -u ${user} splunkd|xargs kill >/dev/null 2>&1
+              pgrep -u ${user} mongod|xargs kill >/dev/null 2>&1
+              ;;
+         N|n )
+              echo "You need to stop splunk before starting."
+              exit
+              ;;
+     esac
+   }
+   # Stop splunk first
+   get_key
+   pgrep -u ${uid} splunkd >/dev/null 2>&1
+   [[ "$?" = "0" ]] && pgrep -u ${uid} splunkd | xargs kill >/dev/null 2>&1
+   pgrep -u ${uid} splunkd >/dev/null 2>&1
+   [[ "$?" != "0" ]] && {
+      echo "1.1 Removing `rpm -q splunk`"
+      rpm -e splunk >/dev/null 2>&1
+   }
+   echo -n "Hit ENTER to continue"
+   read key_ENTER
+   # Clean up /opt/splunk remnances
+   echo "1.2 Clean up /opt/splunk remnances. Please wait..."
+   cd /opt/splunk && find . -not -path "./lost+found" -exec rm -rf {} + >/dev/null 2>&1
+}
+
+echo
+echo "2. Clean up /opt/splunkindexhot_data"
+mount|grep splunkindexhot_data
+[[ "$?" = "0" ]] && {
+   echo "2.1 Unmount /opt/splunkindexhot_data"
+   umount -l /opt/splunkindexhot_data
+   echo "2.2 Recreate /opt/splunkindexhot_data"
+   hot_lvm=`grep splunkindexhot_data /etc/fstab|awk '{print $1}'`
+   
+   mount |grep splunkindexhot_data
+   [[ "$?" != "0" ]] && mkfs.ext4 -m 1 ${hot_lvm}
+   sleep 1
+   mount /opt/splunkindexhot_data
+   echo
+   echo "Verify /opt/splunkindexhot_data"
+   df -hPT /opt/splunkindexhot_data
+}
+
+echo
+echo "3. Clean up /opt/splunkindex_data"
+mount|grep splunkindex_data
+[[ "$?" = "0" ]] && {
+   echo "3.1 Unmount /opt/splunkindex_data"
+   umount -l /opt/splunkindex_data
+   echo "3.2 Recreate /opt/splunkindex_data"
+   cold_lvm=`grep splunkindex_data /etc/fstab|awk '{print $1}'`
+   mount |grep splunkindex_data
+   [[ "$?" != "0" ]] && mkfs.ext4 -m 1 ${cold_lvm}
+   sleep 1
+   mount /opt/splunkindex_data
+   echo
+   echo "Verify /opt/splunkindex_data"
+   df -hPT /opt/splunkindex_data
+}
+
+echo
+echo "4. Installing splunk-7.3.5-86fd62efc3d7-linux-2.6-x86_64.rpm"
+mount|grep '^share_server.dev.mycorp.com:/infra/loc' >/dev/null
+[[ "$?" != "0" ]] && mount share_server.dev.mycorp.com:/infra/loc /mnt
+cd /mnt/Splunk/7.3.5 && rpm -ivh splunk-latest-x86_64.rpm
+
+echo "4.1 Creating ${SPLUNK_HOME}/etc/system/local/user-seed.conf"
+echo key=${prod}
+cat <<END > ${SPLUNK_HOME}/etc/system/local/user-seed.conf
+[user_info]
+USERNAME = admin
+PASSWORD = ${key}
+END
+
+echo
+echo "4.2 Enable splunk@system bootup"
+# ${SPLUNK_BIN}/splunk enable boot-start --answer-yes --no-prompt --accept-license
+# Enable System V initd rather than systemd on RHEL7 + Splunk version 7 or >
+# by adding '-systemd-managed 0' in splunk enable boot-start
+
+${SPLUNK_BIN}/splunk enable boot-start -systemd-managed 1 --answer-yes --no-prompt --accept-license
+
+echo
+echo "Update ${SPLUNK_LOCAL}/web.conf"
+cat<<END > ${SPLUNK_LOCAL}/web.conf
+[settings]
+startwebserver = 0
+
+END
+
+echo
+echo "Update ${SPLUNK_LOCAL}/inputs.conf"
+cat<<END > ${SPLUNK_LOCAL}/inputs.conf
+# Do not modify this file.
+# Auto-generated as part of build 20160713A-s2.0.3 by user2.Llamado
+
+[splunktcp://9990]
+compressed = true
+queueSize = 100MB
+disabled = 0
+END
+
+echo
+# Make sure ownership is correct
+cd /opt && chown -R ${uid}:${gid} splunk splunkindex_data splunkindexhot_data
+echo
+echo "Starting splunk..."
+service splunk start
+
+cat<<END
+##########################################################################
+NEXT STEPS:
+- Convert splunk to ${uid}
+  On ser10966some_loc:/root/scripts, as root
+  jldsh -ew `uname -n` -s ./Convert_Splunk_to_svcacct_at_boot
+ 
+- Make sure files are staged in
+   ${SPLUNK_LOCAL}:
+   . Add License Master ser10966some_loc to server.conf.
+     On ser10966some_loc:/root/scripts, as root
+     jldsh -ew `uname -n` -s ./add_license.ser10966some_loc
+   ${SPLUNK_ETC}:
+   . splunk-launch.conf
+
+- To add `uname -n` back to its cluster, on ser10966some_loc:/root/SPLUNK_CLUSTERING
+  As root,
+ 
+  ./setup_multisite_cluster.PROD
+##########################################################################
+
+END
+cd / && umount -l /mnt
+} | tee /root/`basename $0`.${date_}.OUT
+

@@ -1,0 +1,218 @@
+#!/bin/ksh
+####################################################################################
+# This script performs the followings
+# 1. Creates 140GB lvm, /dev/rootvg/splunklv, from OS RAID1 223.0 GB Virtual Disk 0
+# 2. The 4 x 1.454 TB SATA SSD drives on slots, 0-3, are configured as RAID5 lvm,
+#    /dev/hotvg/hotlv
+# 3. The 14 x 1.637 TB SAS HDD drives on slots, 4-17, are configured as RAID50 lvm,
+#    /dev/coldvg/coldlv
+#    Note: For RAID50, when creating virtual disk via perccli, option pdperarray
+#    needs to specify, ie, pdperarray=7
+# 4. Once all file systems described in 1-3 created and local mount table updated,
+#    install splunk-7.2.3.
+#    Note: In order to maintain the Index cluster splunk start/stop consistency,
+#    option "-systemd-managed 0" must be specified. This option utilizes system V
+#    init rather than systemd by default when splunk version > 7.x is installed.
+# 5. Install latest Java version along with below RHEL packages
+#    kernel-headers,glibc-headers,gcc,gdb,zip,unzip
+# 6. Set ulimit's soft+hard in /etc/security/limits.conf to 262144
+# 7. Set splunk fs.file-max = 2048000 in /etc/sysctl.conf
+# 8. Set nproc's soft+hard in /etc/security/limits.d/20-nproc.conf to 131072
+# 9. Disable Transparent Huge Pages as recommended by Splunk
+# 10. Disable kvstore recommends by Splunk on Indexers.
+#
+# Below is the disks layout on new Dell 740xd
+# RHEL7 OS RAID1: slots 24-25
+# Splunk Hot RAID5 /opt/splunkindexhot_data: slots 0-3
+# Splunk Cold RAID50 /opt/splunkindex_data: slots 4-17
+#
+#-----------------------------------------------------------------------
+# EID:Slt DID State DG     Size Intf Med SED PI SeSz Model            Sp
+#-----------------------------------------------------------------------
+# 32:0      0 UGood -  1.454 TB SATA SSD N   N  512B THNSF81D60CSE    U
+# 32:1      1 UGood -  1.454 TB SATA SSD N   N  512B THNSF81D60CSE    U
+# 32:2      2 UGood -  1.454 TB SATA SSD N   N  512B THNSF81D60CSE    U
+# 32:3      3 UGood -  1.454 TB SATA SSD N   N  512B THNSF81D60CSE    U
+# 32:4      4 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:5      5 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:6      6 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:7      7 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:8      8 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:9      9 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:10    10 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:11    11 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:12    12 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:13    13 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:14    14 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:15    15 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:16    16 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:17    17 UGood -  1.637 TB SAS  HDD N   N  512B AL15SEB18EQY     U
+# 32:24    24 Onln  0  223.0 GB SATA SSD N   N  512B SSDSC2KG240G7R   U
+# 32:25    25 Onln  0  223.0 GB SATA SSD N   N  512B SSDSC2KG240G7R   U
+####################################################################################
+# Written by user1 | T O S Platform A
+SPLUNK_HOME=/opt/splunk
+SPLUNK_LOCAL=${SPLUNK_HOME}/etc/system/local
+splunk_version="splunk-6.6.3-e21ee54bc796.x86_64"
+date_=$(date '+%a%H%M_%m%d%Y')
+
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+
+{
+# Written by JPD.
+
+#---------------------->$1    $2 
+#configure_hot_and_cold $DISK hot
+#
+configure_hot_or_cold ()
+{
+  echo "Formatting ${1}:"
+  parted -s ${1} mklabel gpt
+  parted -s -- ${1} unit TB mkpart primary ext4 0% 100%
+  partprobe
+  ###echo "Creating physical volume ${1}1"
+  ###pvcreate ${1}1
+  ###echo "Creating splunk ${2} volume group: ${2}vg"
+  ###vgcreate ${2}vg ${1}1
+  ###echo "Creating splunk logical volume: ${2}lv"
+  ###lvcreate -l 100%FREE -n ${2}lv ${2}vg
+  ###echo "Creating /dev/${2}vg/${2}lv filesystem"
+  ###mkfs.ext4 -m 1 /dev/${2}vg/${2}lv
+}
+
+check_DISK ()
+{
+ flag=false
+ while [[ "$flag" = "false" ]]
+ do
+   if [[ ! -b $1 ]]
+   then
+     echo "Pause for 3 seconds."
+     sleep 3s
+   else
+    flag=true 
+   fi
+ done 
+}
+
+# Check if perccli installed.
+rpm -q perccli >/dev/null
+[[ "$?" != "0" ]] && {
+   umount -l /mnt
+   mount share_server.dev.mycorp.com:/infra/loc /mnt
+   cd /mnt/Splunk/pkgs && rpm -ivh perccli-1.11.03-1.noarch.rpm
+   ln -s /opt/MegaRAID/perccli/perccli64 /usr/local/bin/perccli
+}
+   
+# Splunk hot: /opt/splunkindexhot_data with RAID5 configuration
+# Slots: 0-3; 1.454 TB SATA SSD
+echo
+cat<<END
+
+Splunk hot: /opt/splunkindexhot_data with RAID5 configuration
+Slots: 0-3; 1.454 TB SATA SSD
+-----------------------------------------------------------------------
+EID:Slt DID State DG     Size Intf Med SED PI SeSz Model            Sp
+-----------------------------------------------------------------------
+`perccli /c0/eall/sall show|grep '1.454 TB'`
+-----------------------------------------------------------------------
+
+END
+
+ssd_drives=`perccli /c0/eall/sall show|awk '/1.454 TB/{print $1}'|sed 's/32://g'`
+ssd_drives=`echo ${ssd_drives}|sed 's/ /,/g'`
+echo ssd_drives=$ssd_drives
+# Create virtual drive for Splunk hot: /dev/sdb
+[[ "${ssd_drives}" = "0,1,2,3" ]] && {
+   echo "Creating Splunk hot: /opt/splunkindexhot_data with RAID5 configuration"
+   echo "Slots: 0-3; 1.454 TB SATA SSD"
+   echo "perccli /c0 add vd type=raid5 drives=32:0-3"
+   # Before creating, check first
+   perccli /c0/v1 show|grep RAID5 >/dev/null
+   if [[ "$?" != "0" ]]
+   then
+      echo "Creating virtual disk for splunk hot: /dev/sdb"
+      perccli /c0 add vd type=raid5 drives=32:0-3
+   else
+      echo "Virtual disk /dev/sdb already created:"
+      perccli /c0/v1 show|grep RAID5
+      echo "Skip this step."
+   fi
+   # Verifying if virtual drive created.
+   v1_size=`perccli /c0/v1 show|awk '/RAID5/{print $(NF -1)}'`
+   [[ "${v1_size}" = "4.364" ]] && {
+       echo "Creating /opt/splunkindexhot_data filesystem"
+       DISK=/dev/sdb
+       check_DISK $DISK
+       if [[ -b ${DISK} ]] 
+       then
+         echo "Running configure_hot_or_cold $DISK hot"
+         configure_hot_or_cold ${DISK} hot 
+       else
+         echo "${DISK} doesnot exist. Abort."
+         exit
+       fi
+   }
+}
+
+cat<<END
+
+Splunk cold: /opt/splunkindex_data with RAID50 configuration
+Slots: 4-17; 14 x 1.637 TB SAS HDD
+-----------------------------------------------------------------------
+EID:Slt DID State DG     Size Intf Med SED PI SeSz Model            Sp
+-----------------------------------------------------------------------
+`perccli /c0/eall/sall show|grep '1.636 TB'`
+-----------------------------------------------------------------------
+
+END
+
+#Create virtual drive for Splunk cold: /dev/sdc
+hdd_drives=`perccli /c0/eall/sall show|awk '/1.636 TB/{print $1}'|sed 's/32://g'`
+hdd_drives=`echo ${hdd_drives}|sed 's/ /,/g'`
+# Create virtual drive for Splunk cold: /dev/sdc
+[[ "${hdd_drives}" = "4,5,6,7,8,9,10,11,12,13,14,15,16,17" ]] && {
+   echo "Creating Splunk cold: /opt/splunkindex_data with RAID50 configuration"
+   echo "Slots: 4-17; 1.636 TB SAS  HDD"
+   echo "Create virtual drive for Splunk cold: /dev/sdc"
+   echo "perccli /c0 add vd type=raid50 drives=32:4-17 pdperarray=7"
+
+   # Before creating, check h_bundle.2019-04-09_1801irst
+   perccli /c0/v2 show|grep -w 'RAID50' >/dev/null
+   if [[ "$?" != "0" ]]
+   then
+      echo "Creating virtual disk for splunk cold: /dev/sdc"
+      perccli /c0 add vd type=raid50 drives=32:4-17 pdperarray=7
+   else
+      echo "Virtual disk /dev/sdc already created:"
+      perccli /c0/v2 show|grep -w 'RAID50'
+      echo "Skip this step."
+   fi
+
+   # Verifying if virtual drive created.
+   v2_size=`perccli /c0/v2 show|awk '/RAID50/{print $(NF -1)}'`
+   [[ "${v2_size}" = "19.641" ]] && {
+       echo "Creating /opt/splunkindex_data filesystem"
+       DISK=/dev/sdc
+       check_DISK $DISK
+       if [[ -b ${DISK} ]]
+       then
+         echo "Running configure_hot_or_cold $DISK cold"
+         configure_hot_or_cold ${DISK} cold
+       else
+         echo "${DISK} doesnot exist. Abort."
+         exit
+       fi
+
+   }
+}
+
+ 
+
+} 2>&1 | tee /root/create_ssd_hdd_vd.${date_}.output
+echo
+echo "OUTPUT: /root/create_ssd_hdd_vd.${date_}.output"

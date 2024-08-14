@@ -1,0 +1,37 @@
+#!/bin/ksh
+###############################################################################
+# The script is to check Indexer Detention mode.                              #
+# Based on                                                                    #
+# https://docs.splunk.com/Documentation/Splunk/7.2.6/Indexer/Peerdetention    #
+###############################################################################
+# Written By user1 | T.O.S
+SPLUNK_BIN=/opt/splunk/bin
+date_=$(date '+%a%H%M_%m%d%Y')
+env_=`uname -n`
+typeset -R3 env_
+
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=${dev}
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=ser_act.prod
+                           key=${prod}
+               ;;
+           * )
+               case `uname -n` in
+                   ser2* ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           key=${prod}
+                           ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=${dev}
+                           ;;
+               esac
+               ;;
+esac
+su - ${uid} -c "${SPLUNK_BIN}/splunk list cluster-config -auth admin:${key} 2>/dev/null|grep manual_detention"

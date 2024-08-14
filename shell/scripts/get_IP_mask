@@ -1,0 +1,9 @@
+#!/bin/ksh
+host_IP=$(host `uname -n`|awk '{print $NF}')
+ifconfig |grep ${host_IP}|grep broadcast|while read line
+do
+  IP=`echo $line|awk '{print $2}'`
+  Mask=`echo $line|awk '{print $4}'`
+  echo "${IP}/${Mask}"
+done
+

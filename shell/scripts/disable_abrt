@@ -1,0 +1,22 @@
+#!/bin/bash
+# https://access.redhat.com/solutions/56021
+
+echo
+echo "1.Stopping abrtd.service"
+systemctl stop abrtd.service
+echo
+echo "Disabling abrtd.service"
+systemctl disable abrtd.service
+echo
+echo "verifying abrtd.service"
+systemctl status abrtd.service|grep Active
+echo
+echo "2.Stopping abrt-ccpp.service"
+systemctl stop abrt-ccpp.service
+echo
+echo "Disabling abrt-ccpp.service"
+systemctl disable abrt-ccpp.service
+echo
+echo "verifying abrt-ccpp.service"
+systemctl status abrt-ccpp.service|grep Active
+echo

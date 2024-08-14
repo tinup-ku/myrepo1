@@ -1,0 +1,117 @@
+#!/bin/ksh
+##################################################################################
+# This script generates a report which shows Splunk apps total buckets along with
+# bucket IDs. The output will be used to distribute Splunk data as well as backout
+# if needed.
+# Usage:
+#        ./1.show_bucket -a all
+# Output:
+#        ./1.show_bucket.YYYY-MM-DD_hhmm.OUT
+# For Example:
+#        ./1.show_bucket.2014-07-03_0930.OUT
+# Note:
+# 1. /var/tmp/1.show_bucket.YYYY-MM-DD_hhmm.NO_BUCKET shows apps with no bucket 
+# 2. Before running this script, 
+#    roll splunk hot buckets to warm. 
+#    /opt/splunk/bin/splunk _internal call \
+#    /data/indexes/main/roll-hot-buckets -auth admin:`uname -n`
+##################################################################################
+# Written by JPD
+SPLUNKINDEX_DATA=/opt/splunkindex_data
+date_=$(date '+%F_%H%M')
+NO_BUCKET=/var/tmp/`basename $0`.${date_}.NO_BUCKET
+
+usage ()
+{
+cat<<END
+
+Usage: $0 [[ -a app1,app2,app3 ]|[ -a all ]]
+
+Where: -a lists app or multiple apps separated by comma (,)
+       -a all (to show all apps)
+
+END
+exit 1
+}
+
+
+list_buckets ()
+{
+    if [[ -d ${SPLUNKINDEX_DATA}/${app}/$1 ]]
+    then
+       cd ${SPLUNKINDEX_DATA}/${app}/$1 && {
+         ls -d db_* >/dev/null 2>&1
+         if [[ "$?" = "0" ]]
+         then
+           bucket_total=`ls -d db_*|wc -l 2>/dev/null`
+           list=`ls -d db_*|awk -F"_" '{print $NF}'|sort -n 2>/dev/null`
+           #list_db=`ls -d db_*|sort -n 2>/dev/null`
+           list_db=`{
+           for bucket_id in $list
+           do
+             ls -d db_*_*_${bucket_id}
+           done
+           }`
+           echo "########################################"
+           echo -n "${app}: (Total $1 buckets: ${bucket_total}) Bucket ID --> "
+           echo ${list}
+           echo
+           echo ${list_db}
+           echo
+         else
+           echo "${app}: NO_BUCKET_SHOWN" >> ${NO_BUCKET}
+         fi
+       }
+    else
+       echo "${app}: ${SPLUNKINDEX_DATA}/${app}/$1 does not exist." >> ${NO_BUCKET}
+    fi
+}
+
+#######
+# MAIN
+#######
+if [[ ! $1 ]]
+then
+  echo -n "Enter app name(s) comma separated (or all)? "
+  read dest
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -a ) dest=$2
+             shift
+             ;;
+      -*|* )
+             usage
+             ;;
+     esac
+     shift
+   done
+fi
+
+# Strip out comma
+dest=${dest//,/ }
+
+[[ "$dest" = "all" ]] && {
+   cd ${SPLUNKINDEX_DATA} && dest=`echo *`
+}
+
+{
+echo "# Put a pound (#) sign at the start of line you want 2.Distribute_app to skip"
+
+for app in $dest
+do
+  if cd ${SPLUNKINDEX_DATA}/${app} 2>/dev/null
+  then
+     for bucket in db colddb
+     do
+        list_buckets $bucket
+     done
+  else
+    echo "${app}: ${SPLUNKINDEX_DATA}/${app} does not exist." >> ${NO_BUCKET}
+  fi
+done
+} | tee /root/SPLUNK_DATA_MIGRATION/`basename $0`.${date_}.OUT
+echo
+echo "OUTPUT: $0.${date_}.OUT"
+

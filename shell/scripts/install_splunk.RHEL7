@@ -1,0 +1,134 @@
+#!/bin/bash
+##############################################################################
+# This script installs Splunk on RHEL server.
+# Splunk specific version package is staged in 
+# nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk/${ver} 
+# and can be access, as root, via
+# mount nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk /mnt
+##############################################################################
+# user_ | T O S
+SPLUNK_HOME=/opt/splunk
+SPLUNK_BIN=${SPLUNK_HOME}/bin
+LOCAL_BIN=/usr/local/bin
+date_=$(date '+%F_%H%M')
+
+{
+
+usage ()
+{
+  cat<<END
+
+  Usage: $0 [ -v version_number ]
+
+  Where: -v version to install
+
+END
+  exit 1
+}
+
+if [[ ! $1 ]]
+then
+  echo -n "Enter Splunk version (ie, 7.2.3) to install? "
+  read ver
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -v ) ver=$2
+             shift
+             ;;
+      -*|* )
+             usage
+             ;;
+     esac
+     shift
+   done
+fi
+
+[[ -z ${ver} ]] && usage
+
+# Check if splunk subsystem object exists
+rpm -qa | grep splunk >/dev/null
+[[ "$?" = "0" ]] && {
+   splunk_manifest=`ls ${SPLUNK_HOME}/splunk-${ver}*-manifest`
+   # Check for ${SPLUNK_HOME}/splunk-${ver}*-manifest
+    [[ -f ${splunk_manifest} ]] && {
+       echo "Splunk manifest already exists: ${splunk_manifest}. Abort"
+        exit
+    }
+}
+
+echo ver=$ver
+
+mount|grep 'nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk' >/dev/null
+[[ "$?" != "0" ]] && {
+  mkdir /mnt1 >/dev/null
+  echo "Mounting nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk /mnt1"
+  mount nfs-bde-dev.dev.mycorp.com:/mapr/BDEDev/splunk /mnt1
+
+  # Check if ${ver} in Splunk repo
+  [[ ! -d /mnt1/${ver} ]] && {
+     echo "${ver} does not exist in Splunk repo."
+     exit
+  }
+
+  cd /mnt1/${ver}/linux && {
+    splunk_rpm=`ls splunk-${ver}*.rpm 2>/dev/null`
+    [[ -z ${splunk_rpm} ]] && {
+           echo "/mnt1/${ver}/linux, splunk package does not exist. Abort"
+           exit 3
+    }
+  }
+}
+
+echo splunk_rpm=$splunk_rpm
+
+if [[ -f /mnt1/${ver}/linux/${splunk_rpm} ]]
+then
+  echo "Installing /mnt/${ver}/linux/${splunk_rpm}"
+  rpm -ivh /mnt1/${ver}/linux/${splunk_rpm}
+else
+  echo "Package /mnt1/${ver}/linux/${splunk_rpm} doesnot exist. Abort"
+  exit
+fi
+
+echo "Creating ${SPLUNK_HOME}/etc/system/local/user-seed.conf"
+cat <<END > ${SPLUNK_HOME}/etc/system/local/user-seed.conf
+[user_info]
+USERNAME = admin
+PASSWORD = `uname -n`_admin
+END
+
+echo
+echo "Enable splunk@system bootup"
+${SPLUNK_BIN}/splunk enable boot-start --answer-yes --no-prompt --accept-license
+echo
+echo "Enable Splunkd.service"
+systemctl enable Splunkd.service
+echo "Start Splunkd.service"
+systemctl start Splunkd.service
+echo
+echo "Checking Splunkd.service status"
+systemctl status Splunkd.service
+
+echo "Copying show_splunk to $LOCAL_BIN"
+cd /mnt1/scripts && cp -f show_splunk.RHEL7 $LOCAL_BIN/show_splunk
+echo
+echo "In $LOCAL_BIN, creating stop_splunk, start_splunk"
+cat <<END > $LOCAL_BIN/start_splunk
+#!/bin/ksh
+systemctl start Splunkd.service
+END
+
+cat<<END_ > $LOCAL_BIN/stop_splunk
+#!/bin/ksh
+systemctl stop Splunkd.service
+systemctl daemon-reload
+END_
+
+cd /usr/local/bin && chmod +x start_splunk stop_splunk
+
+} | tee /var/tmp/`basename $0`.${date_}.OUT
+echo
+echo "OUTPUT: /var/tmp/`basename $0`.${date_}.OUT"
+cd && umount -f /mnt1 && rmdir /mnt1

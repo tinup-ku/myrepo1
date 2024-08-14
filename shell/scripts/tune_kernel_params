@@ -1,0 +1,95 @@
+#!/bin/ksh
+####################################################################################
+# This script performs the followings
+# . Set ulimit's soft+hard in /etc/security/limits.conf to 262144
+# . Set splunk fs.file-max = 2048000 in /etc/sysctl.conf
+# . Set nproc's soft+hard in /etc/security/limits.d/20-nproc.conf to 131072
+# . Disable Transparent Huge Pages as recommended by Splunk
+#
+####################################################################################
+# Written by user1 | T O S Platform A
+date_=$(date '+%a%H%M_%m%d%Y')
+
+[[ `uname -n` = "ser15000some_loc" ]] && {
+   echo "Running $0 on wrong node: ser15000some_loc"
+   exit
+}
+
+{
+# Set up splunk parameters
+# 1. /etc/security/limits.conf
+echo
+echo "Updating /etc/security/limits.conf"
+mv -f /etc/security/limits.conf /etc/security/limits.conf.ORIG
+{
+cat /etc/security/limits.conf.ORIG
+cat<<END_
+# Begin Splunk Settings
+*     soft    nofile  262144
+*     hard    nofile  262144
+# End Splunk Settings
+END_
+} >> /etc/security/limits.conf
+
+# 2. /etc/sysctl.conf
+echo
+echo "Updating /etc/sysctl.conf"
+mv -f /etc/sysctl.conf /etc/sysctl.conf.ORIG
+{
+cat /etc/sysctl.conf.ORIG
+cat<<END__
+# Begin Splunk Settings
+fs.file-max = 2048000
+vm.swappiness = 5
+# End Splunk Settings
+END__
+} >> /etc/sysctl.conf
+
+sysctl -p
+
+# 3. /etc/security/limits.d/20-nproc.conf: nproc set to 131072 per Splunk's recommendation.
+echo
+echo "Updating /etc/security/limits.d/20-nproc.conf"
+{
+cat<<END
+# Default limit for number of user's processes to prevent
+# accidental fork bombs.
+# See rhbz #432903 for reasoning.
+
+*          soft    nproc     131072
+*          hard    nproc     131072
+root       soft    nproc     unlimited
+END
+} > /etc/security/limits.d/20-nproc.conf
+
+chmod 644 /etc/security/limits.d/20-nproc.conf
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP).
+echo "Splunk recommends to turn off Transparent Huge Pages (THP)"
+echo "Updating /etc/rc.local:"
+[ -f /etc/rc.d/rc.local ] && {
+  /bin/cp -p /etc/rc.d/rc.local /etc/rc.d/ORIG.rc.local
+  {
+    cat /etc/rc.d/ORIG.rc.local
+    cat<<EOF
+
+# On RHEL6/7, Splunk recommends to turn off Transparent Huge Pages (THP). 
+# This has a profound impact on system load. There's a decent Oracle Blog 
+# about it at 
+# https://blogs.oracle.com/linux/entry/performance_issues_with_transparent_huge. 
+# http://answers.splunk.com/answers/112305/on-rh-6-and-splunk-6-my-searches-are-consuming-lots-of-cpu
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+EOF
+  } > /etc/rc.d/rc.local
+
+  chmod +x /etc/rc.d/rc.local
+  /etc/rc.d/rc.local
+}
+
+echo "COMPLETED."
+cd && umount /mnt
+} 2>&1 | tee /root/`basename $0`.${date_}.output
+echo
+echo "OUTPUT: /root/`basename $0`.${date_}.output"

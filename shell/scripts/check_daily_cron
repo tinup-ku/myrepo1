@@ -1,0 +1,79 @@
+#!/bin/ksh
+# This script performs the followings
+# 1. Checking number of files.
+# 2. Checking for $fileName with file size < 15 bytes
+# 3. Getting line counts for each output and overall Total 
+# for all daily cronjobs running on s3140some_loc,s3141some_loc, and s3141loc2
+# as Splunk service account, ser_act.prod
+#
+# By user1 P. user1 | T. O. S. Platform A
+#
+if [[ ! $1 ]]
+then
+   date=`date '+%Y%m%d' -d "1 day ago"`
+else
+   echo "Enter a date in the form of YYYYMMDD (20191231)? "
+   read date
+fi
+
+cd /ser_act.prod/exportMAPR && {
+jobs=`su - ser_act.prod -c 'crontab -l'|awk '{print $9}'|sed -e 's/)//g'|sed '/^$/d'`
+
+echo '### Below are daily cronjobs ###'
+echo "$jobs"
+echo
+for job in $jobs
+do
+  echo "****** Checking $job"
+  custPath=`awk -F= '/^custPath/{print $NF}' /ser_act.prod/exportMAPR/$job`
+  fileName=`awk -F= '/^fileName=/{print $NF}' /ser_act.prod/exportMAPR/$job`
+  files=`awk -F= '/^files=/{print $NF}' /ser_act.prod/exportMAPR/$job`
+  fullPath=/hadoop/bdh/raw/eli/${custPath}/${date}_NEW
+  echo fullPath=${fullPath}
+  echo fileName=${fileName}
+  echo files=${files}
+  cd $fullPath && {
+    echo "1. Checking number of files."
+    num_files=`ls ${fileName}*|wc -l`
+    if [[ ${num_files} != "${files}" ]]
+    then
+       echo "number of files, ${num_files}, are not as expected, $files"
+    else
+       echo "All's Good."
+    fi
+
+    # Check for file size
+    echo "2. Checking for $fileName with file size < 15 bytes"
+    num=`find . -type f -name "${fileName}*" -size -15c -exec ls -l {} +|wc -l`
+    if [[ "${num}" != "0" ]]
+    then
+      find . -type f -name "${fileName}*" -size -15c -exec ls -l {} +
+    else
+      echo "All's Good."
+    fi
+
+   # Check line counts for All and get TOTAL
+   echo "3. Getting line counts for each output and overall Total"
+   echo
+   if [[ ! -f /tmp/${fileName}.${date}_NEW ]]
+   then
+      {
+        for file in `ls -tr ${fileName}*`
+        do
+         echo -n "${file}: "
+         bzcat $file|wc -l
+        done
+      } >> /tmp/${fileName}.${date}_NEW
+      cat /tmp/${fileName}.${date}_NEW
+      echo -n "TOTAL: "
+      cat /tmp/${fileName}.${date}_NEW |awk '{tot +=$2}END{print tot}'
+   else
+      cat /tmp/${fileName}.${date}_NEW
+      echo -n "TOTAL: "
+      cat /tmp/${fileName}.${date}_NEW |awk '{tot +=$2}END{print tot}' 
+   fi
+  }
+  echo
+done
+}
+

@@ -1,0 +1,90 @@
+
+#######
+Step 1:
+#######
+Create a file, .splunk, and add the followings
+dev=${new_DEV_password}
+prod=${new_PROD_password}
+dev_before=${current_DEV_password}
+prod_before=${current_PROD_password}
+
+Where
+dev is the new DEV/QA/TEST/POC password
+dev_before is the current password as shown above
+
+prod is the new PROD password
+prod_before is the current password as shown above
+
+#######
+Step 2:
+#######
+On ser10966some_loc, as root
+
+#cat .splunk | gpg -c --batch --passphrase --option  -o .splunk.gpg -
+cat .splunk | gpg -c --batch --xyz xyz  -o .splunk.gpg -
+
+rm -f .splunk && mv -f .splunk.gpg /.splunk
+
+#######
+Step 3:
+#######
+
+Distribute, via jldsh, .splunk to ALL DEV/QA/TEST/POC/PROD's /.splunk
+
+For example, to push .splunk to all PROD Indexers.
+
+jlpcp -eg splunk_multisite_indexers /.splunk /.splunk
+
+
+#######
+Step 4:
+#######
+Change the password. On ser10966some_loc, as root
+
+cd /root/scripts
+jldsh -eg ${GROUP} -s ./change_admin_passwd
+
+Where ${GROUP} is the GROUP defined in $CLUSTER
+
+NOTE:
+1. On Splunk Search Head Cluster, since server.conf's stanza is set to true
+
+[shclustering]
+conf_replication_include.passwd = true
+
+ONLY one search head member will be needed to change.
+
+
+2. Below are Splunk systems where scripts utilize admin and its passwd
+
+SYSTEM               SCRIPTS
+----------           ------------------------
+ser10934some_loc           /root/splunk-tools/appPkg-prod.sh
+
+ser10860some_loc           /usr/local/bin/push_bundle
+
+s3140some_loc             ./exportMAPR/.exportMAPR.sh
+                     ./exportMAPR/exportMAPR-CC-cc-secure.sh
+                     ./exportMAPR/exportMAPR-list-files.sh
+                     ./exportMAPR/exportMAPR-Prospect-marketing_elilogs.sh
+                     ./exportMAPR/exportMAPR-Prospect-iis.sh
+
+s3141some_loc             ./exportMAPR/.exportMAPR.sh
+                     ./exportMAPR/exportMAPR-cam_metrics.sh
+                     ./exportMAPR/exportMAPR-cc_secure.sh
+                     ./exportMAPR/exportMAPR-mobile_elilogs.sh
+                     ./exportMAPR/exportMAPR-mobile_secure_elilogs.sh
+                     ./exportMAPR/exportMAPR-cam_elilogs.sh
+
+s3141loc2             ./exportMAPR/.exportMAPR.sh
+                     ./exportMAPR/exportMAPR-CWP-iis-logs-no-bzip.sh
+                     ./exportMAPR/exportMAPR-CWP-iis-logs.sh
+                     ./exportMAPR/exportMAPR-CWP-marketing.sh
+                     ./exportMAPR/exportMAPR-sne_M_elilogs.sh
+                     ./exportMAPR/exportMAPR-sne_M_secure_elilogs.sh
+                     ./exportMAPR/exportMAPR-voice_secure_vbvoice_ivrLogs.sh
+
+ser10964some_loc           /opt/splunk/etc/apps/ELIS2H/bin/mycorpSplunkToHadoop.py
+
+ser10965some_loc           /opt/splunk/etc/apps/ELIS2H/bin/mycorpSplunkToHadoop.py
+

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+splunk_hot_disk=`fdisk -l|grep '/dev/sd'|grep '500 GiB'|head -1|awk '{print $2}'|sed 's/://g'`
+splunk_cold_disk=`fdisk -l|grep '/dev/sd'|grep '500 GiB'|tail -4|awk '{print $2}'|sed 's/://g'`
+
+splunk_cold_disk=`{
+for m in $splunk_cold_disk
+do
+	echo -n "$m "
+done
+echo
+}`
+
+splunk_hot_disk_pv=`echo ${splunk_hot_disk}1`
+splunk_cold_disk_pv=`{
+for n in $splunk_cold_disk
+do
+  echo -n "${n}1 "
+done
+echo
+}`
+
+echo "splunk_hot_disk=$splunk_hot_disk"
+echo "splunk_hot_disk_pv=$splunk_hot_disk_pv"
+echo
+echo "splunk_cold_disk=$splunk_cold_disk"
+echo "splunk_cold_disk_pv=$splunk_cold_disk_pv"
+
+
+

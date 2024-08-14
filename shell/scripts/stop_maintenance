@@ -1,0 +1,33 @@
+#!/bin/ksh
+# Splunk Service account:
+#ser_act.prod:VAS:500327:9998:ser_act.prod:/ser_act.prod:/bin/ksh
+#ser_act.dev:VAS:562314:60231:ser_act.dev:/ser_act.dev:/bin/ksh
+SPLUNK_BIN=/opt/splunk/bin
+env_=`uname -n`
+typeset -R3 env_
+
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 | loc4 ) uid=ser_act.prod
+                           key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                   ser2*  ) uid=ser_act.prod
+                           gid=unx_9998_access
+                           key=$prod
+                           ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                  gid=unx_60231_splunk_admin_dev
+                                  key=$dev
+                           ;;
+               esac
+               ;;
+esac
+su - ${uid} -c "${SPLUNK_BIN}/splunk disable maintenance-mode -auth admin:${key}"
+

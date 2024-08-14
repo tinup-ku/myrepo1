@@ -1,0 +1,259 @@
+#!/bin/bash
+
+# Submitted MyIT#2433528 for F/W port 8443 access from
+# Sources: ser10966some_loc, ser10486some_loc
+# Destinations: PROD Kafka General and PCF Connectors
+# $CLUSTER's LUMP:
+# All_Confluent_Enterprise_General_Kafka_Connect_PROD_Cluster
+# All_Confluent_Enterprise_PCF_Kafka_Connect_PROD_Cluster
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+
+############
+# PROD PCF
+############
+PROD_PCF_Connector_names="
+splunk-sink-pcf-authentication-logs-connector
+splunk-sink-pcf-logs-connector
+splunk-sink-pcf-metrics-connector
+splunk-sink-pcf-mobile-logs-connector
+splunk-sink-pcf-tradingequitieset-logs-connector"
+
+show_PROD_PCF_Connector_names ()
+{
+echo -e "${bold_yellow}"
+cat <<END
+
+------------------------------------------------
+splunk-sink-pcf-authentication-logs-connector
+splunk-sink-pcf-logs-connector
+splunk-sink-pcf-metrics-connector
+splunk-sink-pcf-mobile-logs-connector
+splunk-sink-pcf-tradingequitieset-logs-connector
+------------------------------------------------
+
+END
+echo -e "${reset_color}"
+}
+
+##############
+# PROD General
+##############
+# Need to get access from 
+#https://bitbucket.mycorp.com/projects/IP00000076/repos/telemetry-kafka-connectors/browse/sink
+
+############
+# QA PCF
+############
+QA_PCF_Connector_names="
+splunk-sink-pcf-authentication-logs-connector
+splunk-sink-pcf-logs-connector
+splunk-sink-pcf-metrics-connector
+splunk-sink-pcf-mobile-logs-connector
+splunk-sink-pcf-tradingequitieset-logs-connector"
+
+show_QA_PCF_Connector_names ()
+{
+echo -e "${bold_yellow}"
+cat <<END
+
+------------------------------------------------
+splunk-sink-pcf-authentication-logs-connector
+splunk-sink-pcf-logs-connector
+splunk-sink-pcf-metrics-connector
+splunk-sink-pcf-mobile-logs-connector
+splunk-sink-pcf-tradingequitieset-logs-connector
+------------------------------------------------
+
+END
+echo -e "${reset_color}"
+}
+
+############
+# QA General
+############
+QA_General_Connector_names="
+splunk-sink-aws-ccaas-event-connector
+splunk-sink-aws-thematic-log-connector
+splunk-sink-coveo-logs-connector
+splunk-sink-geneos-connector
+splunk-sink-telegraf-json-metrics-connector"
+
+show_QA_General_Connector_names ()
+{
+echo -e "${bold_yellow}"
+cat <<END
+
+-------------------------------------------
+splunk-sink-aws-ccaas-event-connector
+splunk-sink-aws-thematic-log-connector
+splunk-sink-coveo-logs-connector
+splunk-sink-geneos-connector
+splunk-sink-telegraf-json-metrics-connector
+-------------------------------------------
+
+END
+echo -e "${reset_color}"
+}
+
+{
+eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+
+show_connector_tasks ()
+{
+curl --insecure https://${kafka_svc_acct}:${key}@${kafka_connector_server}:8443/connectors/${1}/status 2>/dev/null|jq '.[]' |grep '    "state"'
+
+num=`{
+curl --insecure https://${kafka_svc_acct}:${key}@${kafka_connector_server}:8443/connectors/${1}/status 2>/dev/null
+}|jq '.[]' |grep '    "state"'|wc -l`
+echo "Tasks RUNNING: $num"
+}
+
+show_pounds ()
+{
+  for num in `seq 1 $1`
+  do
+    echo -n "#"
+  done
+  echo
+}
+
+show_tasks ()
+{
+  num_chars=`echo $connector|wc -c`
+  num_chars=`expr ${num_chars} + 7`
+  show_pounds $num_chars
+  echo "${connector} Status:"
+  show_pounds $num_chars
+  show_connector_tasks ${connector}
+  echo
+}
+
+##########
+# M A I N
+##########
+echo
+echo "This script shows #Tasks RUNNING in [PROD|QA]'s Enterprise [General|PCF] Kafka Connectors:"
+echo
+while [ 1 ]
+do
+   echo -en "Is it ${bold_yellow}P${reset_color})ROD or ${bold_yellow}Q${reset_color})A? "
+   read env_
+   echo
+   case ${env_} in
+        P|p )
+              env__=PROD
+              kafka_svc_acct=svc.kafka_splunk_prd
+              key=${kafka_prod}
+              echo -en "Is it ${bold_yellow}G${reset_color})eneral or ${bold_yellow}P${reset_color})CF? "
+              read g_or_p
+              case ${g_or_p} in
+                   G|g )
+                         type_=General
+                         kafka_connector_server=ser21-009270
+                         echo show_PROD_General_Connector_names
+                         echo "Need Doug/Ken to allow access to:"
+                         echo "https://bitbucket.mycorp.com/projects/IP00000076/repos/telemetry-kafka-connectors/browse/sink"
+                         echo "For now, ping Doug/Ken to check status"
+#                        break
+                         echo -e "Below are ${bold_yellow}${env__} ${type_}${reset_color} Enterprise Kafka Connectors:"
+                         echo -en "Enter connectors separated by a space, or ${bold_yellow}A${reset_color})ll? " 
+                         read connectors
+                         if [[ "${connectors}" = "A" || "${connectors}" = "a" ]]
+                         then
+                            for connector in ${PROD_General_Connector_names}
+                            do
+                              show_tasks
+                            done
+                         else
+                            for connector in ${connectors}
+                            do
+                              show_tasks
+                            done
+                         fi
+                         ;;
+                   P|p )
+                         type_=PCF
+                         kafka_connector_server=ser21-010208
+                         echo -e "Below are ${bold_yellow}${env__} ${type_}${reset_color} Enterprise Kafka Connectors:"
+                         show_PROD_PCF_Connector_names
+                         echo
+                         echo -en "Enter connectors separated by a space, or ${bold_yellow}A${reset_color})ll? " 
+                         read connectors
+                         if [[ "${connectors}" = "A" || "${connectors}" = "a" ]]
+                         then
+                            for connector in ${PROD_PCF_Connector_names}
+                            do
+                              show_tasks
+                            done
+                         else
+                            for connector in ${connectors}
+                            do
+                              show_tasks
+                            done
+                         fi
+                         ;;
+              esac
+              ;;
+        Q|q )
+              env__=QA
+              kafka_svc_acct=svc.splunk_kafka_dev
+              key=${kafka_dev}
+              echo -en "Is it ${bold_yellow}G${reset_color})eneral or ${bold_yellow}P${reset_color})CF? "
+              read g_or_p
+              case ${g_or_p} in
+                   G|g )
+                         type_=General
+                         kafka_connector_server=cud1-014425
+                         echo -e "Below are ${bold_yellow}${env__} ${type_}${reset_color} Enterprise Kafka Connectors:"
+                         show_QA_General_Connector_names
+                         echo -en "Enter connectors separated by a space, or ${bold_yellow}A${reset_color})ll? " 
+                         read connectors
+                         if [[ "${connectors}" = "A" || "${connectors}" = "a" ]]
+                         then
+                            for connector in ${QA_General_Connector_names}
+                            do
+                              show_tasks
+                            done
+                         else
+                            for connector in ${connectors}
+                            do
+                              show_tasks
+                            done
+                         fi
+                         
+                         ;;
+                   P|p )
+                         type_=PCF
+                         kafka_connector_server=cud1-014031
+                         echo -e "Below are ${bold_yellow}${env__} ${type_}${reset_color} Enterprise Kafka Connectors:"
+                         show_QA_PCF_Connector_names
+                         echo -en "Enter connectors separated by a space, or ${bold_yellow}A${reset_color})ll? " 
+                         read connectors
+                         if [[ "${connectors}" = "A" || "${connectors}" = "a" ]]
+                         then
+                            for connector in ${QA_PCF_Connector_names}
+                            do
+                              show_tasks
+                            done
+                         else
+                            for connector in ${connectors}
+                            do
+                              show_tasks
+                            done
+                         fi
+                         ;;
+              esac
+   esac
+   echo
+   echo -en "Continue (${green}Y${reset_color}|${red}N${reset_color})? "
+   read ans
+   case ${ans} in
+        Y|y ) continue;;
+          * ) exit
+   esac
+done

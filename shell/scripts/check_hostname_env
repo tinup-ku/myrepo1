@@ -1,0 +1,100 @@
+#!/bin/bash
+# For hostname convention detail, use jumpword "Naming Standard"
+echo -n "Enter a hostname? "
+read node
+# Check Iaas hostname convention (first four characters)
+# c[u|w][p|d][1|2|4]-xxxxxx
+# Where
+#       First character c: Cloud Platform (IaaS)
+#
+#       Second character [u|w]
+#                       u: *nix
+#                       w: W2K
+#
+#       Third character [p|d]
+#                       p: PROD
+#                       d: DEV/QA/TEST/POC
+#
+#       Fourth character [1|2|4]
+#                       1: PDC1
+#                       2: PDC3
+#                       4: DC4
+#
+# Example:
+# PDC1: cud1-006932 
+# Where
+#       c: Iaas device
+#       u: Unix. If W2k it will be w
+#       d: PROD
+#       1: PDC1
+#       2: PDC3
+# DC4 hostname convention: c[w|u]p4-xxxxxx   W for windows U for linux
+#                          p=prod or d=dev
+first_four_chars=`echo $node|grep -o '^....'`
+first_char=`echo ${first_four_chars}|grep -o '^.'`
+second_char=`echo ${first_four_chars}|cut -c2`
+third_char=`echo ${first_four_chars}|cut -c3`
+fourth_char=`echo ${first_four_chars}|grep -o '.$'`
+
+echo "first_four_chars=${first_four_chars}"
+echo
+echo first_char=$first_char
+echo second_char=$second_char
+echo third_char=$third_char
+echo fourth_char=$fourth_char
+
+# Check environment
+case ${third_char} in
+     p ) echo -n "`uname -n` is a PROD ..."
+         ;;
+     d ) echo -n "`uname -n` is DEV ..."
+         ;;
+     * ) echo "Don't know the make of it. Abort"
+         exit
+         ;;
+esac 
+
+# Check Location: PDC1|PDC3|DC4
+case ${fourth_char} in
+     1 ) echo " at PDC1"
+         ;;
+     2 ) echo " at PDC3"
+         ;;
+     4 ) echo " at DC4"
+         ;;
+     * ) echo "Don't know where it is. Abort"
+         exit
+         ;;
+esac
+
+case $node in
+     cud* | cuq* ) #DEV|QA Deployment server
+                   case $fourth_char in
+                         4 )
+                             deployment_server="DC4-QA_deployment_server"
+                             ;;
+                     1 | 2 )
+                             deployment_server=splunkdeploymentserver-qa.dev.mycorp.com
+                             ;;
+                         * )
+                             echo "Last character does not match in DEV/QA"
+                             exit   
+                             ;;
+                   esac
+                   ;;
+
+            ser2* ) #PROD Deployment server
+                   case $fourth_char in
+                         4 )
+                             deployment_server="splunkdeploymentserver-loc5.mycorp.com"
+                             ;;
+                     1 | 2 )
+                             deployment_server=splunkdeploymentserver.mycorp.com
+                             ;;
+                         * )
+                             echo "Last character does not match in PROD"
+                             exit
+                             ;;
+                   esac
+                   ;;
+

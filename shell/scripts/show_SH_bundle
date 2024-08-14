@@ -1,0 +1,30 @@
+#!/bin/bash
+
+SPLUNK_HOME=/opt/splunk
+SPLUNK_ETC=${SPLUNK_HOME}/etc
+SPLUNK_SNAPSHOT=${SPLUNK_HOME}/var/run/splunk/snapshot
+SPLUNK_VAR_RUN=${SPLUNK_HOME}/var/run/splunk
+date_=`date '+%Y%m%d'`
+
+
+##########
+# M A I N
+##########
+  cd ${SPLUNK_SNAPSHOT} && {
+     # Get total .bundle count 
+     bundle_count=$(ls -Art *.bundle 2>/dev/null|wc -l)
+     if [[ ${bundle_count} -gt 1 ]]
+     then
+       echo "Below are list of current .bundle:"
+       ls -ltr
+       # Identify latest bundle
+       echo
+       latest=`ls -Art  | tail -n 1`
+       echo "Latest bundle:"
+       ls -ltr ${latest}
+       echo "Below are list of .bundle to remove:"
+       find . -type f ! -name  ${latest} ! -newer ${latest} -exec ls -ltr {} +
+     else
+       echo "There's only 1 .bundle. Proceed with backing up ${SPLUNK_SNAPSHOT}"
+     fi
+  }

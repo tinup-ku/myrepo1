@@ -1,0 +1,35 @@
+#!/bin/ksh
+
+get_key ()
+{
+  . /.key
+  echo ${F5_fqdn}|grep 'dev' >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+    key=${dev}
+  else
+    key=${prod}
+  fi
+}
+
+F5_fqdn=splunk-restapi.mycorp.com
+F5_fqdn=splunk-qa.dev.mycorp.com
+F5_fqdn=splunk-admin.mycorp.com
+get_key 2>/dev/null
+echo "Get SH captain from F5 $F5_fqdn ..."
+captain=`curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+
+echo "captain=$captain"
+
+echo "Below are splunk-admin.mycorp.com Search Head members"
+
+[[ -z ${captain} ]] && echo "Failed to identify captaincy on F5 ${F5_fqdn}. Abort." && exit
+
+sh_peers=`{
+curl -k -u admin:${key} https://${captain}:8089/services/shcluster/captain/members|grep "mgmt_uri"
+} 2>/dev/null|sed -e 's/<s:key name="mgmt_uri">https:\/\///g' -e 's/:8089<\/s:key>//g'`
+sh_peers=$(echo $sh_peers|sed 's/ /,/g')
+echo
+echo sh_peers=$sh_peers
+echo
+

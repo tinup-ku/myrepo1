@@ -1,0 +1,36 @@
+#!/bin/ksh
+# The script shows how-to resync stale KV store members
+# Based on
+# https://docs.splunk.com/Documentation/Splunk/7.2.6/DistSearch/RestartSHC
+#
+SPLUNK_BIN=/opt/splunk/bin
+env_=`uname -n`
+typeset -R3 env_
+
+{
+eval `gpg --batch --xyz xyz -quiet --no-verbose -d /.splunk` >/dev/null 2>&1
+} 2>/dev/null
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               key=$dev
+               ;;
+   some_loc | loc2 | loc3 ) uid=ser_act.prod
+               key=$prod
+               ;;
+           * )
+               case `uname -n` in
+                         ser2* ) uid=ser_act.prod
+                                gid=unx_9998_access
+                                key=$prod
+                                ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                gid=unx_60231_splunk_admin_dev
+                                key=$dev
+                                ;;
+               esac
+               ;;
+esac
+su - ${uid} -c "${SPLUNK_BIN}/splunk login -auth admin:${key};${SPLUNK_BIN}/splunk rolling-restart shcluster-members -status 1"
+
+
+

@@ -1,0 +1,27 @@
+
+[1m[33mF[0m)ailover from PDC1:cud1-008622.us.global.mycorp.com to PDC3:cud2c-005235.csdev.corp, or
+Fail[1m[33mB[0m)ack from PDC3:cud2c-005235.csdev.corp to PDC1:cud1-008622.us.global.mycorp.com
+
+Enter option: ([1m[33mF[0m/[1m[33mB[0m)? 
+Failover QA RestAPI Search Head Deployer, [1m[33mcud1-008622.us.global.mycorp.com[0m, to its backup, [1m[33mcud2c-005235.csdev.corp[0m.
+
+[cud1c-004762,cud1c-004763,cud1c-004770,cud1c-004771,cud2c-005231,cud2c-005232,cud2c-005233,cud2c-005234]:/opt/splunk/etc/system/local, copy server.conf to server.conf.PRIMARY
+
+
+[cud1c-004762,cud1c-004763,cud1c-004770,cud1c-004771,cud2c-005231,cud2c-005232,cud2c-005233,cud2c-005234]:/opt/splunk/etc/system/local/server.conf, point to cud2c-005235.csdev.corp
+
+
+Below is server.conf's conf_deploy_fetch_url on each search head.
+
+cud1c-004762: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud1c-004763: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud1c-004770: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud1c-004771: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud2c-005231: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud2c-005232: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud2c-005233: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+cud2c-005234: conf_deploy_fetch_url = https://cud2c-005235.csdev.corp:8089
+
+Ready to restart splunk on cud1c-004762,cud1c-004763,cud1c-004770,cud1c-004771,cud2c-005231,cud2c-005232,cud2c-005233,cud2c-005234:([1m[32mY[0m|[1m[32mN[0m)? You'll need to restart cud1c-004762,cud1c-004763,cud1c-004770,cud1c-004771,cud2c-005231,cud2c-005232,cud2c-005233,cud2c-005234 one at a time, or
+`/opt/splunk/bin/splunk rolling-restart shcluster-members` from any of cud1c-004762,cud1c-004763,cud1c-004770,cud1c-004771,cud2c-005231,cud2c-005232,cud2c-005233,cud2c-005234
+

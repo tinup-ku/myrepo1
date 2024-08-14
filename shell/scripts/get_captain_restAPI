@@ -1,0 +1,28 @@
+#!/bin/ksh
+
+get_key ()
+{
+  . /.key
+  echo ${F5_fqdn}|grep 'dev' >/dev/null
+  if [[ "$?" = "0" ]]
+  then
+    key=${dev}
+  else
+    key=${prod}
+  fi
+}
+
+#F5_fqdn=splunk-restapi.mycorp.com
+#F5_fqdn=splunk-restapi-qa.dev.mycorp.com
+#F5_fqdn=splunk-qa.dev.mycorp.com
+F5_fqdn=splunk-admin.mycorp.com
+F5_fqdn=splunk-preprod.mycorp.com
+get_key 2>/dev/null
+echo key=$key
+captain=`curl -k -u admin:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+#captain=`curl -k -u user1:${key} https://${F5_fqdn}:8089/services/shcluster/captain/info 2>/dev/null|grep "label"| awk -F'>' '{print $2}'|sed 's/<\/s:key//g'`
+
+echo $captain
+
+#svc.DSPU_splunk_dev
+#Big-yiarv7ugryick

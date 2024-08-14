@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cd /opt/splunk/var/run/searchpeers && {
+find . -type d \( -name 's0302some_loc*' -o -name 's0303some_loc*' -o -name 's0163loc3*' -o -name 's0182loc3*' -o -name 's3110some_loc*' -o -name 's3111some_loc*' -o -name 's3111loc2*' -o -name 's0978loc2*' -o -name 's0160loc3*' -o -name 's0161loc3*' -o -name 's0162loc3*' -o -name 's0180loc3*' -o -name 's0181loc3*' \) -exec ls -lR {} +|wc -l
+}
+

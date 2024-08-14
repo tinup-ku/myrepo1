@@ -1,0 +1,2 @@
+#!/bin/bash
+ps -ef|grep [s]plunk|grep search|grep Aug29|awk '{print $2}'|xargs kill

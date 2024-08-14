@@ -1,0 +1,10 @@
+#!/bin/bash
+
+ps -ef|grep [O]ct23|grep '\[splunkd' >/dev/null
+[[ "$?" = "0" ]] && {
+   echo "Need to clean up: ---------------"
+   ps -ef|grep [O]ct23|grep '\[splunkd'|awk '{print $2}'
+   ps -ef|grep [O]ct23|grep '\[splunkd'
+   ps -ef|grep [O]ct23|grep '\[splunkd'|awk '{print $2}'|xargs kill -9
+}
+  

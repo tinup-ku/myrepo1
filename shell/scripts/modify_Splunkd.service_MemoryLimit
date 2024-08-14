@@ -1,0 +1,52 @@
+#!/bin/ksh
+##############################################################################
+# This script modifies out of the box Splunkd.service from root to Splunk AD
+# service account, ser_act.[dev|prod]
+# This is based on
+# https://docs.splunk.com/Documentation/Splunk/8.2.0/Workloads/Configuresystemd
+# Note:
+#  - On Indexer, need to comment out
+#    Restart=always 
+#  - On Splunk Search Head/Mamagement nodes, Restart stays intact.
+##############################################################################
+# Written by user1 | Team
+env_=`uname -n|grep -o '...$'`
+Splunkd_service=/etc/systemd/system/Splunkd.service
+
+case ${env_} in
+   pdv | bdv ) uid=ser_act.dev
+               gid=unx_60231_splunk_admin_dev
+               ;;
+   some_loc | loc2 |loc4 ) uid=ser_act.prod
+                    gid=unx_9998_access
+               ;;
+           * )
+               case `uname -n` in
+                         ser2* ) uid=ser_act.prod
+                                gid=unx_9998_access
+                                ;;
+                   cud*| cut* ) uid=ser_act.dev
+                                gid=unx_60231_splunk_admin_dev
+                                ;;
+               esac
+               ;;
+esac
+
+# Get RAM info
+# 1048576=1024*1024
+RAM=`grep MemT /proc/meminfo|awk '{$2/=1048576;printf "%.2fG\n",$2}'`
+
+# Get current MemoryLimit value and replace with MemoryLimit=${RAM} in GB
+current_RAM=`awk -F= '/^MemoryLimit/{print $0}' ${Splunkd_service}`
+
+# Replace with ${RAM}
+sed -i "s/${current_RAM}/MemoryLimit=${RAM}/g" ${Splunkd_service} 
+
+# Add the followings to /etc/systemd/system/Splunkd.service:
+# PermissionsStartOnly=true
+# ExecStartPost=/bin/bash -c "chown -R ${uid}:${gid} /sys/fs/cgroup/cpu/system.slice/%n"
+# ExecStartPost=/bin/bash -c "chown -R ${uid}:${gid} /sys/fs/cgroup/memory/system.slice/%n"
+#
+grep '^ExecStartPost' ${Splunkd_service} >/dev/null 2>&1
+[[ "$?" != "0" ]] && \
+sed -i "/CPUShares=1024/aPermissionsStartOnly=true\nExecStartPost=/bin/bash -c \"chown -R ${uid}:${gid} /sys/fs/cgroup/cpu/system.slice/%n\"\nExecStartPost=/bin/bash -c \"chown -R ${uid}:${gid} /sys/fs/cgroup/memory/system.slice/%n\"" ${Splunkd_service}

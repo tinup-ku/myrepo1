@@ -1,0 +1,2 @@
+#!/bin/ksh
+jldsh -eg splunk_multisite_indexers_pdc1,splunk_multisite_indexers_pdc3 "awk -F= '/^guid/{print \$NF}' /opt/splunk/etc/instance.cfg"

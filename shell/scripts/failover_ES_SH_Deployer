@@ -1,0 +1,166 @@
+#!/bin/bash
+############################################################################
+# NOTE:
+# 1. On primary Deployer, daily cronjob@midnight push to ser14615some_loc
+# rsync -ar ser14615some_loc:/opt/splunk/etc/shcluster/ ser14615loc2:/opt/splunk/etc/
+#
+# 2. On each Search Heads in ES SH cluster, modify 
+#    $SPLUNK_HOME/etc/system/local/server.conf's stanza
+#    From:
+#    [shclustering]
+#    conf_deploy_fetch_url = https://splunkdeployer-es.mycorp.com:8089
+#
+#    To:
+#    [shclustering]
+#    conf_deploy_fetch_url = https://ser14615loc2.some_loc.mycorp.com:8089
+#
+# 3. Restart splunk on each search head, or from any search head in the cluster
+#    ${SPLUNK_BIN}/splunk rolling-restart shcluster-members
+#
+# 4. On failover Deployer, ser14615loc2, as ser_act.prod
+#    $SPLUNK_BIN/splunk apply shcluster-bundle -target https://s3110loc2.some_loc.mycorp.com:8089
+#
+# 6. For details, see http://docs.splunk.com/Documentation/Splunk/9.1.3/DistSearch/PropagateSHCconfigurationchanges#Consequence_and_remediation_of_deployer_failure
+############################################################################
+# By user1 P. user1 | T.O.S
+#
+SPLUNK_HOME=/opt/splunk
+SPLUNK_BIN=$SPLUNK_HOME/bin
+PRIMARY=splunkdeployer-es.mycorp.com
+SECONDARY=ser14615loc2.some_loc.mycorp.com
+ES_SearchHeads="s3111some_loc,s3110loc2,s3111loc2"
+date_=$(date '+%F_%H%M')
+bold_yellow="\e[1m\e[33m"
+bold_green="\e[1m\e[32m" 
+reset_color="\e[0m"
+
+
+usage ()
+{
+cat<<END
+
+Usage: $0 [ -F|-f ] [ -B|-b ]
+
+Where:
+       -F or -f Failover from ${PRIMARY} to ${SECONDARY}
+       -B or -b Failback from ${SECONDARY} to ${PRIMARY}
+
+END
+exit 1
+}
+
+
+check_remote_host ()
+{
+bad_host=""
+for node in $1
+do
+   ping -c 1 $node >/dev/null 2>&1
+   [[ "$?" != "0" ]] && bad_host="${bad_host} $node"
+done
+
+[[ ! -z ${bad_host} ]] && {
+     echo "Node Down | Incorrect hostname | Hostname not in DNS: ${bad_host}"
+     exit 2
+   }
+}
+
+##########
+# M A I N
+##########
+clear
+{
+if [[ "$#" = "0" ]]
+then
+   echo
+   echo -e "${bold_yellow}F${reset_color})ailover from PDC1:${PRIMARY} to PDC3:${SECONDARY}, or"
+   echo -e "Fail${bold_yellow}B${reset_color})ack from PDC3:${SECONDARY} to PDC1:${PRIMARY}"
+   echo
+   echo -ne "Enter option: (${bold_yellow}F${reset_color}/${bold_yellow}B${reset_color})? "
+   read ans
+   case $ans in
+      F|f ) deployer=${SECONDARY}
+            failover=true
+            ;;
+      B|b ) deployer=${PRIMARY}
+            failover=false
+            ;;
+        * )
+            usage
+            ;;
+   esac
+else
+   while [[ $# -gt 0 ]]
+   do
+     case $1 in
+        -F|-f ) deployer=${SECONDARY}
+                failover=true
+                ;;
+        -B|-b ) deployer=${PRIMARY}
+                failover=false
+                ;;
+         -*|* )
+                usage
+                ;;
+        esac
+        shift
+   done
+fi
+
+check_remote_host $deployer
+
+if [[ "$failover" = "true" ]]
+then
+   echo
+   echo "Failover ES Search Head Deployer, splunkdeployer-es.mycorp.com, to its backup, ${SECONDARY}."
+   echo
+   # On each search head, make a copy of server.conf
+   echo "[${ES_SearchHeads}]:$SPLUNK_HOME/etc/system/local, copy server.conf to server.conf.PRIMARY"
+   echo
+   jldsh -ew ${ES_SearchHeads} "cd ${SPLUNK_HOME}/etc/system/local; cp server.conf server.conf.PRIMARY" >/dev/null
+
+   # On each search head's server.conf points deployer to ${SECONDARY}
+   echo
+   echo "[${ES_SearchHeads}]:$SPLUNK_HOME/etc/system/local/server.conf, point to ${deployer}"
+   echo
+   jldsh -ew ${ES_SearchHeads} "cd ${SPLUNK_HOME}/etc/system/local; sed -i \"s/${PRIMARY}/${deployer}/g\" server.conf" >/dev/null
+else
+   # Failback from PDC3 --> PDC1
+   echo
+   echo "On ${ES_SearchHeads}: Copy server.conf.PRIMARY --> server.conf"
+   jldsh -ew ${ES_SearchHeads} "cd ${SPLUNK_HOME}/etc/system/local;cp -f server.conf.PRIMARY server.conf" >/dev/null
+   echo
+fi
+
+
+# Verify ${deployer}'s server.conf 
+echo
+echo "Below is server.conf's conf_deploy_fetch_url on each search head."
+echo
+jldsh -ew ${ES_SearchHeads} "cd ${SPLUNK_HOME}/etc/system/local;grep '^conf_deploy_fetch_url' server.conf"
+echo
+status_flag=false
+echo -ne "Ready to restart splunk on ${ES_SearchHeads}:(${bold_green}Y${reset_color}|${bold_green}N${reset_color})? "
+read rsvp
+case $rsvp in
+      Y|y )
+           for sh in `echo ${ES_SearchHeads}|sed 's/,/ /g'`
+           do
+             echo "Restart splunk on $sh. Please wait"
+             jldsh -ew $sh "stop_splunk;start_splunk"
+             while [[ "$status_flag" = "false" ]]
+             do
+               sleep 2m
+               # Verify splunk is UP
+               splunk_status=`jldsh -ew $sh "show_splunk|grep SPLUNK"|awk '{print $NF}'`
+               [[ "${splunk_status}" = "UP" ]] && status_flag=true
+             done
+           done
+           ;;
+        * )
+           echo "You'll need to restart ${ES_SearchHeads} one at a time, or"
+           echo "\`${SPLUNK_BIN}/splunk rolling-restart shcluster-members\` from any of ${ES_SearchHeads}"
+           echo
+           ;;
+esac
+} | tee `basename $0`.${date_}.OUT

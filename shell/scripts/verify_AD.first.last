@@ -1,0 +1,4 @@
+#!/bin/bash
+
+id ad.user2 >/dev/null 2>&1
+[[ "$?" = "0" ]] && echo "ad.user2 OK"

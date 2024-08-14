@@ -1,0 +1,28 @@
+#!/bin/bash
+
+echo "1. Cleaning /opt/splunk/etc/peer-apps.old.bkp"
+[[ -d /opt/splunk/etc/peer-apps.old.bkp ]] && ls -ld /opt/splunk/etc/peer-apps.old.bkp
+echo
+echo "2. Cleaning up old ES and ITSI Search artifacts"
+echo -n "Total: "
+cd /opt/splunk/var/run/searchpeers && {
+  find . -type d \( -name 's0302some_loc*' -o -name 's3110loc2*' -o -name 's0303some_loc*' -o -name 's0163loc3*' -o -name 's0182loc3*' -o -name 's3110some_loc*' -o -name 's3111some_loc*' -o -name 's3111loc2*' -o -name 's0978loc2*' -o -name 's0160loc3*' -o -name 's0161loc3*' -o -name 's0162loc3*' -o -name 's0180loc3*' -o -name 's0181loc3*' \) -exec ls -lR {} +|wc -l
+  echo "ES + ITSI files:"
+  find . -type f \( -name 's0302some_loc*' -o -name 's3110loc2*' -o -name 's0303some_loc*' -o -name 's0163loc3*' -o -name 's0182loc3*' -o -name 's3110some_loc*' -o -name 's3111some_loc*' -o -name 's3111loc2*' -o -name 's0978loc2*' -o -name 's0160loc3*' -o -name 's0161loc3*' -o -name 's0162loc3*' -o -name 's0180loc3*' -o -name 's0181loc3*' \) -exec ls -lR {} +|wc -l
+}
+echo
+echo "3. Cleaning all files/dirs in /opt/splunk/var/run/splunk/dispatch "
+cd /opt/splunk/var/run/splunk/dispatch && {
+   #find . -exec rm -rf {} +
+   echo -n "Total dir to clean up: "
+   find . -type d -print |wc -l
+}
+echo
+echo "4. /opt/splunk, cleaning old diags and etc-splunk-8.1.5.tar.gz etc-splunk-9.0.4.1.tar.gz"
+
+cd /opt/splunk && {
+   #rm -f diag* etc-splunk-8.1.5.tar.gz etc-splunk-9.0.4.1.tar.gz
+   find . -type f  -maxdepth 1 -name "diag*" -exec ls -l {} + 
+   ls -l etc-splunk-8.1.5.tar.gz etc-splunk-9.0.4.1.tar.gz 2>/dev/null
+}
+
