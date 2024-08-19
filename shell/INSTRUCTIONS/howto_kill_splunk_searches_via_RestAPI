@@ -1,0 +1,84 @@
+- https://community.splunk.com/t5/Splunk-Search/How-can-I-end-a-long-running-search-job-using-the-Splunk-API/m-p/216589
+
+1 -query the REST API to get the list of jobs running and their SID
+
+see http://docs.splunk.com/Documentation/Splunk/6.5.0/RESTTUT/RESTsearches
+
+2 - find the ones you want to terminate
+
+3 - call the job termination REST API endpoint for this job SID.
+http://docs.splunk.com/Documentation/Splunk/6.5.0/RESTREF/RESTsearch#search.2Fjobs.2F.7Bsearch_id.7D...
+
+example with curl to finalize job "mysearch_02151949"
+
+ curl -k -u admin:pass https://localhost:8089/services/search/jobs/mysearch_02151949/control -d action=finalize
+Remark : If you want to script , you can use the SDK to interact with the API
+http://dev.splunk.com/sdks?r=searchtip
+
+View solution in original post
+
+- https://community.splunk.com/t5/Splunk-Search/Is-there-a-search-or-REST-command-to-stop-running-searches/m-p/121652
+Yes, there is a REST command to stop a running search.
+
+Use this command to get a list of searches back:
+
+curl -k -u admin:<pwd> https://localhost:8089/services/search/jobs/ | grep '<id>'
+You can use the `` URL to cancel/delete this search like this:
+
+curl -k -u admin:<pwd> --request DELETE https://localhost:8089/services/search/jobs/1416293763.77
+and get back a response like this:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <messages>
+    <msg type="INFO">Search job cancelled.</msg>
+  </messages>
+</response>
+For more details have a look at the docs http://docs.splunk.com/Documentation/Splunk/6.2.0/RESTREF/RESTsearchExamples#search.2Fjobs.2F.7Bsear...
+
+If you just need a nice table view of the running jobs, you can do this as well from the Splunk UI using this search:
+
+| rest /services/search/jobs/ | table author, id
+Hope this helps ...
+
+cheers, MuS
+
+View solution in original post
+
+- https://community.splunk.com/t5/Splunk-Search/Instead-of-using-Job-Manager-rest-call-to-kill-stop-all-running/m-p/553876
+I have the following rest query to identify the current running query for jasper.dang
+
+| rest /services/search/jobs/
+| search author=jasper.dang dispatchState=RUNNING
+| search NOT id=*scheduler*
+| table title id normalizedSearch runDuration
+
+You can try following Rest API, action: cancel . Doc link - Search endpoint descriptions - Splunk Documentation
+
+https://<host>:<mPort>/services/search/jobs/{search_id}/control
+curl -k -u admin:pass https://localhost:8089/services/search/jobs/mysearch_02151949/control -d action=pause
+
+- https://community.splunk.com/t5/Splunk-Search/Is-there-a-search-or-REST-command-to-stop-running-searches/m-p/121652
+
+Yes, there is a REST command to stop a running search.
+
+Use this command to get a list of searches back:
+
+curl -k -u admin:<pwd> https://localhost:8089/services/search/jobs/ | grep '<id>'
+You can use the `` URL to cancel/delete this search like this:
+
+curl -k -u admin:<pwd> --request DELETE https://localhost:8089/services/search/jobs/1416293763.77
+and get back a response like this:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <messages>
+    <msg type="INFO">Search job cancelled.</msg>
+  </messages>
+</response>
+For more details have a look at the docs http://docs.splunk.com/Documentation/Splunk/6.2.0/RESTREF/RESTsearchExamples#search.2Fjobs.2F.7Bsear...
+
+If you just need a nice table view of the running jobs, you can do this as well from the Splunk UI using this search:
+
+| rest /services/search/jobs/ | table author, id
+

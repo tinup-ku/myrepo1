@@ -1,0 +1,22 @@
+
+https://stackoverflow.com/questions/158044/how-to-use-find-to-search-for-files-created-on-a-specific-date
+
+To find all files modified on the 7th of June, 2007:
+
+$ find . -type f -newermt 2007-06-07 ! -newermt 2007-06-08
+To find all files accessed on the 29th of september, 2008:
+
+$ find . -type f -newerat 2008-09-29 ! -newerat 2008-09-30
+Or, files which had their permission changed on the same day:
+
+$ find . -type f -newerct 2008-09-29 ! -newerct 2008-09-30
+
+
+
+You could also look at files between certain dates by creating two files with touch
+
+touch -t 0810010000 /tmp/t1
+touch -t 0810011000 /tmp/t2
+This will find files between the two dates & times
+
+find / -newer /tmp/t1 -and -not -newer /tmp/t2

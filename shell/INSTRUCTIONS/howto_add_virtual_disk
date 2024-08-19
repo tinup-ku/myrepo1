@@ -1,0 +1,76 @@
+BEFORE:
+---------------------------------------------------------------------------
+DG Arr Row EID:Slot DID Type  State BT     Size PDC  PI SED DS3  FSpace TR
+---------------------------------------------------------------------------
+ 0 -   -   -        -   RAID1 Optl  N  223.0 GB dflt N  N   dflt N      N
+ 0 0   -   -        -   RAID1 Optl  N  223.0 GB dflt N  N   dflt N      N
+ 0 0   0   32:24    24  DRIVE Onln  N  223.0 GB dflt N  N   dflt -      N
+ 0 0   1   32:25    25  DRIVE Onln  N  223.0 GB dflt N  N   dflt -      N
+ - -   -   32:12    12  DRIVE GHS   -  1.636 TB -    -  -   -    -      N
+---------------------------------------------------------------------------
+
+AFTER:
+---------------------------------------------------------------------------
+DG Arr Row EID:Slot DID Type  State BT     Size PDC  PI SED DS3  FSpace TR
+---------------------------------------------------------------------------
+ 0 -   -   -        -   RAID1 Optl  N  223.0 GB dflt N  N   dflt N      N
+ 0 0   -   -        -   RAID1 Optl  N  223.0 GB dflt N  N   dflt N      N
+ 0 0   0   32:24    24  DRIVE Onln  N  223.0 GB dflt N  N   dflt -      N
+ 0 0   1   32:25    25  DRIVE Onln  N  223.0 GB dflt N  N   dflt -      N
+ 1 -   -   -        -   RAID1 Optl  Y  1.454 TB dflt N  N   dflt N      N
+ 1 0   -   -        -   RAID1 Optl  Y  1.454 TB dflt N  N   dflt N      N
+ 1 0   0   32:0     0   DRIVE Onln  N  1.454 TB dflt N  N   dflt -      N
+ 1 0   1   32:1     1   DRIVE Onln  N  1.454 TB dflt N  N   dflt -      N
+ - -   -   32:12    12  DRIVE GHS   -  1.636 TB -    -  -   -    -      N
+---------------------------------------------------------------------------
+
+STEPS:
+1. Create virtual disk
+BEFORE:
+[root@s0981bdc ~]# fdisk -l|grep '/dev/sd'
+WARNING: fdisk GPT support is currently new, and therefore in an experimental phase. Use at your own discretion.
+Disk /dev/sda: 239.4 GB, 239444426752 bytes, 467664896 sectors
+
+- create RAID1 on slots 32:0-1
+  perccli /c0 add vd type=raid1 drives=32:0-1
+
+AFTER:
+[root@s0981bdc ~]# fdisk -l|grep '/dev/sd'
+WARNING: fdisk GPT support is currently new, and therefore in an experimental phase. Use at your own discretion.
+WARNING: fdisk GPT support is currently new, and therefore in an experimental phase. Use at your own discretion.
+Disk /dev/sda: 239.4 GB, 239444426752 bytes, 467664896 sectors
+Disk /dev/sdb: 1599.7 GB, 1599741100032 bytes, 3124494336 sectors
+
+2. Format /dev/sdb
+   DISK=/dev/sdb
+   parted -s ${DISK} mklabel gpt
+   parted -s -- ${DISK} unit TB mkpart primary ext4 0% 100%
+   partprobe
+
+   pvcreate /dev/sdb1
+ 
+3. Add /dev/sdb1 to rootvg
+
+   vgextend rootvg /dev/sdb1
+
+[root@s0981bdc ~]# pvs
+  PV         VG     Fmt  Attr PSize    PFree
+  /dev/sda3  rootvg lvm2 a--  <220.88g    0
+  /dev/sdb1  rootvg lvm2 a--     1.45t 1.45t
+
+4. Extend and grow /dev/rootvg/rootlv
+
+   lvextend -l +100%FREE  /dev/rootvg/rootlv
+   xfs_growfs /dev/rootvg/rootlv
+
+RESULT:
+
+BEFORE:
+Filesystem                Type   Size  Used Avail Use% Mounted
+/dev/mapper/rootvg-rootlv xfs    213G   13G  201G   6% /
+
+AFTER:
+Filesystem                Type  Size  Used Avail Use% Mounted on
+/dev/mapper/rootvg-rootlv xfs   1.7T   13G  1.7T   1% /
+
+

@@ -1,0 +1,88 @@
+#!/bin/bash
+
+get_Auth_Key_Token ()
+{
+  case ${target} in
+       ser10973some_loc | \
+       some_loc14-005391 )
+                    X_Auth_Key='hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8'
+                    X_Auth_Token='aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij'
+                    ;;
+       some_loc11-012458 | \
+       some_loc11-012458domain1 | \
+       some_loc12-011215 | \
+       some_loc11-012465 | \
+       some_loc12-011224 | \
+       some_loc17-006076 | \
+       some_loc17-006076domain1 | \
+       some_loc17-006078 | \
+       some_loc14-011621 | \
+       some_loc14-011648 )
+                    X_Auth_Key='1bmhwKrNhsaCrevkGD96uyajGJ5OoJ6PXfdZDj7dK6Kswy9rN1Y5ix5s0Vdv9dG6ERms60fk3G8jBMpQVJfw2CNW2NnOX4IYbiNHF6HWxmaAqcJudymydb7Yb0fBBfGR'
+                    X_Auth_Token='gXZHf9SYXoQYNllXs62VgmNf97nMtD6JB6rQfkOcIFaw0wtsCwoSTb82iwOMaVwL1XCghrs06Dw69ZzMwXFp9NsskheucLgeITu0kX0qAwxKw6x23csdZUFkcUPoF5Cn'
+                    ;;
+                 * )
+                    echo "${target} unknown. Abort"
+                    exit 1
+                    ;;
+          
+  esac
+  state_file='app_iaas_serviceassuranceservices_prod.AD00006311_splunk_core.salt.states.deploy_fwdapps'
+}
+
+kill_jid ()
+{
+  curl --location --request POST 'https://cmaapidomain1/salt/kill_running_job' \
+       --header "X-Auth-Key: ${X_Auth_Key}" \
+       --header "X-Auth-Token: ${X_Auth_Token}" \
+       --header 'Content-Type: application/json' \
+       --data '[{
+                  "target": "'"${target}"'",
+                  "jid": "'"${jid}"'",
+                  "tgt_type": "list"
+               }]'
+}
+
+show_jid_status_ ()
+{
+    status=`{
+              curl --location --request \
+                   GET "https://cmaapidomain1/salt/job_status/$1" \
+                   --header "X-Auth-Key: ${X_Auth_Key}" \
+                   --header "X-Auth-Token: ${X_Auth_Token}"
+    } 2>/dev/null`
+
+    echo $status
+    #echo $status|grep 'state": "complete' >/dev/null
+    #if [[ "$?" = "0" ]]
+    #then
+    #   echo " COMPLETED"
+    #else
+    #   echo -e " ${bold_yellow}RUNNING${reset_color}"
+    #fi
+}
+
+
+##########
+# M A I N
+##########
+echo "Terminating current RUNNING job."
+echo
+read -p "Enter Deployment server name? " target
+read -p  "Enter job id? " jid
+get_Auth_Key_Token
+
+
+echo
+echo "1. Checking job id, $jid"
+show_jid_status_ $jid
+echo
+
+echo "2. Terminating job id, $jid"
+kill_jid 
+echo
+echo
+sleep 3s
+echo "3.Checking job id, $jid"
+show_jid_status_ $jid
+echo

@@ -1,0 +1,107 @@
+Search Head	App Name
+Removed	accountLockout
+#svm1990cdc	advice_suite
+#svm1889cdc	AIPSearchApp
+#svm1889cdc	Appdynamics - HOLD
+#svm0491cdc	availability
+#svm4190cdc	BPTS
+#svm1990cdc	C2
+#svm1990cdc	CallCenterVoIP
+#svm1989cdc	CAMExtract1
+#svm1990cdc	CAMExtract2
+#svm1886bdc	ClearPassOnSplunk_2
+#svm4191cdc	CNS
+#svm1990cdc	CRE
+#svm4192cdc	CTSSearchApp
+#svm0836cdc	CXP
+#svm1887bdc	dbx
+#svm1989cdc	dco_load_dashboard
+#svm1889bdc	DDP
+Removed	ELICompliance
+#svm1888cdc	ELIS2H
+#svm1887bdc	ELIS2HReports
+#svm1887bdc	EntCaching
+#svm1889cdc	EntCachingSearchApp
+#svm1886bdc	ESM-Batch
+#svm0837cdc	Executive-Dashboard
+#svm0834cdc	FlawSynchronizerSearchApp
+#svm1886bdc	FlexSearchApp - HOLD
+Removed	frrt
+#svm1889bdc	GSOSearchApp
+#svm4191cdc	HallwayDash
+#svm4191cdc	HG
+#svm0490cdc	itdatagovernance
+#svm1990cdc	ITEM
+#svm0837cdc	ITO_Load_Dashboards
+#svm0491cdc	itsi
+Removed	JuniperSA
+#svm0837cdc	Keynote
+Removed	KeynoteIndexerApp 
+Removed	LockoutDashboard
+#svm1990cdc	lync-searchapp
+#svm4191cdc	Mainframe - HOLD
+#svm0834cdc	Metrics_Warehouse
+Removed	missile_map
+#svm0836cdc	MobileWeb
+#svm1889cdc	MongoDBSearchApp
+#svm1887bdc	nate
+#svm1886bdc	OptionsExpress
+#svm1886bdc	OX
+#svm4193cdc	paperless
+#svm0489cdc	proofpoint
+#svm0490cdc	protocol_ta
+#svm0837cdc	proxy - HOLD
+#svm4191cdc	psoft-searchapp
+#svm1990cdc	rrbus
+#svm1990cdc	SAA
+Removed	SA-AccessProtection
+Removed	SA-AuditAndDataProtection
+#svm4191cdc	SABI
+Removed	SA-CommonInformationModel
+Removed	SA-Eventgen
+#svm1990cdc	SA-Hydra
+Removed	SA-ldapsearch
+	SA-Threshold
+Removed	SA-Utils
+#svm1990cdc	SA-VMW-HierarchyInventory
+#svm1990cdc	SA-VMW-LogEventTask
+#svm1990cdc	SA-VMW-Performance
+Removed	search_catalog
+Removed	searchBackupv5
+#svm4191cdc	SFDC
+Removed	sideview_utils
+#svm1889cdc	SMLogging
+#svm1886bdc	snmp_ta
+#svm2131cdc	soc10
+Removed	SOCUsageReport
+Removed	splunk_app_cef
+Removed	splunk_app_db_connect
+#svm2131cdc	splunk_app_microsoft_exchange
+#svm1990cdc	splunk_app_netapp
+Removed	splunk_app_windows_infrastructure
+#svm1887bdc	splunk_datasets_addon
+Removed	splunk_for_vmware
+#svm1990cdc	Splunk_KB_CiscoUCS
+#svm1990cdc	Splunk_ML_Toolkit
+#svm1889cdc	Splunk_SA_Scientific_Python_linux_x86_64
+Consolidated	splunk_search_usage
+#svm1887bdc	splunk_team
+#svm0491cdc	SplunkAppForCiscoUCS
+#svm1990cdc	SplunkforJuniperSRX
+Removed	SplunkforPaloAltoNetworks
+Removed	StreetSmartCentralIndexerApp
+Removed	StreetsmartSearchApp
+#svm4190cdc	SvcReg
+#svm4191cdc	TEST
+	tm1- HOLD
+#svm0837cdc	tos
+#svm0489cdc	TOSSystems
+#svm1886bdc	TreatIntel
+#svm0492cdc	TSSSearchApp
+#svm1886bdc	tsstools
+#svm0835cdc	vetter
+##svm1990cdc	viz_boxplot_app
+#svm0836cdc	website_monitoring
+#svm1889cdc	Zenoss - HOLD
+#svm0489cdc	
+

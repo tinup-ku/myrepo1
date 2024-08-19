@@ -1,0 +1,366 @@
+#!/bin/bash
+##############################################################
+## This script applies the salt state for Kafka connectors to Kafka hosts:
+##  Salt state:
+##     https://bitbucketdomain1/projects/AD00203364/repos/tos_kafkaconnect/browse/salt/states/connect_pcf.sls
+##  Update the new connector hosts here: /usr/local/bin/kafka_connector.hostlist
+##  Connector hosts(QA/PROD): /usr/local/bin/kafka_connector.hostlist 
+## Logs are here: /var/tmp/LOG/KAFKA/
+##############################################################
+## Written by: user3@mycorp.com
+##############################################################
+
+    mydate=`date +%Y%m%d_%H.%M.%S`
+    this_script=`basename $0`
+    logdir="/var/tmp/LOG/KAFKA/"
+    logfile=${logdir}/${this_script}.${mydate}.log
+    #mail_to="user2@mycorp.com,user1@mycorp.com,user4@mycorp.com,user3@mycorp.com"
+    #mail_to="user3@mycorp.com"
+    mail_to="grp2@mycorp.com"
+    tmp_log1=${logdir}/tmp_log1_${mydate} ;  tmp_log2=${logdir}/tmp_log2_${mydate} ;  tmp_log3=${logdir}/tmp_log3_${mydate}
+    echo -n > $tmp_log1 ;  echo -n > $tmp_log2 ;  echo -n > $tmp_log3 ; echo -n > $logfile
+
+
+    Red='\033[0;31m'          # Red
+    White='\033[0;37m'        # White
+    bold_yellow="\e[1m\e[33m"
+    reset_color="\e[0m"
+
+
+    display_help() {
+        echo "Usage: $0 -e <environment> -u <username>" 1>&2;
+        echo "Example:"
+        echo "$0 -e <dev|qa|prod> -u <username>" 1>&2;
+        echo -e "$0 -e dev -u first.last \n"
+        exit 1
+    }
+
+    args_parse () {
+        while getopts ":e:u:" o; do
+           case "${o}" in
+              e)
+                  e=${OPTARG}
+                  ;;
+              u)
+                  u=${OPTARG}
+                  ;;
+              *)
+                  display_help
+                  ;;
+           esac
+        done
+        #shift $((OPTIND-1))
+
+        if [ -z "${e}" ] || [ -z "${u}" ]; then
+           display_help
+        else
+          user_=${u}
+          env_=${e}
+          #echo "$user_ $env_"
+        fi
+
+    }
+
+
+    set_mode () {
+
+
+        # Testing or Deploy mode
+        # salt apply mode for testing : "apply_state_tst" or "apply_state" to enforce
+
+        if [ -z  "${mode_}" ]; then
+           echo ""
+           #read -p "Mode? Test|Deploy: " mode_
+           echo -en "Is it [${bold_yellow}T${reset_color}]est or [${bold_yellow}D${reset_color}]eploy? "
+           read mode_
+        fi
+
+        if [ -z  "${mode_}" ]; then
+           echo "Invalid Mode: pls enter mode for Testing or Actual Deployment:" >> $logfile
+           echo -e "${Red}  ERROR: Invalid Mode: pls enter mode for Testing or Actual Deployment: ${White}"
+           exit 1
+        fi
+
+        case ${mode_} in
+             T|t )
+                 apply_="apply_state_tst"
+                  ;;
+             D|d )
+                 apply_="apply_state"
+                   ;;
+             * )
+                   echo -e "${Red}  ERROR: Invalid Mode: pls enter mode for Testing or Actual Deployment: ${White}"
+                   exit 1
+                   ;;
+         esac
+
+
+        #hosts
+        host_list="${kafka_hosts}"
+        #host_list=${kafka_hosts_tst}
+
+    }
+
+   user_parse() {
+        if [ -z  "${user_}" ]; then
+           #read -p "User-name? your first.last: " user_
+           echo -en "Enter AD ${bold_yellow}first.last${reset_color}? "
+           read user_
+        fi
+
+        if [ -z  "${user_}" ]; then
+           echo "Invalid user: $user_ " >> $logfile
+           echo -e "${Red} ERROR: No User name given: $user_ ${White}"
+           exit 1
+        fi
+
+        if [[ -r /.splunk_cred ]]
+            then
+            user_cred="/.splunk_cred"
+        else
+            echo "Can't validate user..."
+            #user_cred="./.idxapp_usr"
+        fi
+        outu=`eval gpg --batch --passphrase --option -d $user_cred 2>&1 | grep $user_ | head -1 | cut -d":" -f2 | sed "s/\///g" `
+        #echo "$outu"
+        if [[ ! -z $outu ]]
+            then
+            if [[ "$user_" != "$outu" ]]
+               then
+               echo "Invalid user: $user_" >> $logfile
+               echo -e "${Red} ERROR: Invalid user: $user_ ${White}"
+               exit 1
+            fi
+        else
+           echo "Invalid user: $user_" >> $logfile
+           echo -e "${Red} ERROR: Invalid user: $user_ ${White}"
+           exit 1
+        fi
+   }
+
+    envs_parse () {
+        if [ -z  "${env_}" ]; then
+           echo ""
+           #read -p "Eenvironment? qa|prod: " env_
+           echo -en "Is it [${bold_yellow}Q${reset_color}]A or [${bold_yellow}P${reset_color}]ROD? "
+           read env1
+        fi
+
+        if [ -z  "${env1}" ]; then
+           echo "Invalid environment: pls enter environment for qa, dev or prod:" >> $logfile
+           echo -e "${Red}  ERROR: Invalid environment: pls enter environment name like qa, dev or prod: ${White}"
+           exit 1
+        fi
+
+        case ${env1} in
+             D|d )
+                  env_=dev
+                  ;;
+             Q|q )
+                   env_=qa
+                   ;;
+             P|p )
+                   env_=prod
+                   ;;
+         esac
+
+
+        case ${env_} in
+           qa )
+                kafka_hosts=`awk '/QA_START/{flag=1;next} /QA_END/{flag=0} flag' /usr/local/bin/kafka_connector.hostlist`
+                #kafka_hosts=(
+                #  cud1-014030 cud1-014031 cud1-014032 cud1-014033 cud1-014034 cud1-014035 cud1-014036 cud1-014037
+                #  cud1-015589 cud1-015590 cud1-015591 cud1-015592 cud1-015593 cud1-015594 cud1-015595 cud1-015596
+                #  cud2-010197 cud2-010198 cud2-010199 cud2-010200 cud2-010201 cud2-010202 cud2-010203 cud2-010204
+                #  cud2-011802 cud2-011803 cud2-011804 cud2-011805 cud2-011806 cud2-011807 cud2-011808 cud2-011809
+                #   )
+                kafka_hosts_tst="cud1-014030 cud1-014031"
+
+                auth_key="OPzKBTEFz9fwoZGa1hSKhnBJC3wQhTQFxlgu8pRNqPOnR9fLPhaxeSopyjtuQ2qvvmDGqN668tPsk9cuNFJ1RWdRiUaphg2crLKquczvBEH4fOd73sLJOGx4xIPqYQV2"
+                auth_token="uxiAghf9eCfnsCZnf9xwlBZ5iBHe6WdBtvcKNrT149owLoU1xrxS2wYk7FzeBMP5h2P4uJ5ySu5DSZFqqcjtJhNRWm5y9VEqXuusdA0555JX5oovBHZlYMcV9iuie8Jc"
+                state_file="app_iaas_serviceassuranceservices_dev.AD00006311_kafkaconnect.salt.states.connect_pcf"
+                ;;
+           prod )
+                kafka_hosts=`awk '/PROD_START/{flag=1;next} /PROD_END/{flag=0} flag' /usr/local/bin/kafka_connector.hostlist`
+                #kafka_hosts=(
+                #   some_loc11-010207 some_loc11-010208 some_loc11-010209 some_loc11-010210 some_loc11-010658 some_loc11-010659 some_loc11-010660 some_loc11-010661
+                #   some_loc11-013042 some_loc11-013043 some_loc11-013044 some_loc11-013045 some_loc11-013046 some_loc11-013047 some_loc11-013048 some_loc11-013053
+                #   some_loc11-013054 some_loc11-013055 some_loc11-013056 some_loc11-013057 some_loc14-007538 some_loc14-007539 some_loc14-007540 some_loc14-007541
+                #   some_loc14-007542 some_loc14-007543 some_loc14-007544 some_loc14-007545 some_loc14-012093 some_loc14-012094 some_loc14-012095 some_loc14-012096
+                #   some_loc14-012097 some_loc14-012100 some_loc14-012101 some_loc14-012102 some_loc14-012103 some_loc14f-001050 some_loc14e-001020 some_loc14f-003105
+                # )
+                kafka_hosts_tst="some_loc11-010207 some_loc11-010208"
+
+                auth_key="BA8bQdSoBebS5QRCmz2oVDmmTTVaGZ912P7bhp8Nv6i26xTYGLhv6bqqRk9jGMXnv7p01dOvykuWt9zH2Q1S4ijuTBOWCiLuD55WKxNNAn2CAsVPkawv1OtcGjtVDpxZ"
+                auth_token="RDJhqOJnK880I3B4ry916g12lQC8aRh2u1jUP3izbqAUubZVK8XQoZSKPvTZna1SblM0p5AAwav0muW6CTX1SPMHlFGIPIA14n2ttC4ZMzZ93VfGOcHH2too857YOI0S"
+                state_file="app_iaas_serviceassuranceservices_prod.AD00006311_kafkaconnect.salt.states.connect_pcf"
+                ;;
+           *)
+               echo "Invalid environment: ${env_}" | tee -a $logfile
+               echo -e "${Red}  ERROR: Invalid environment: pls enter environment for  qa, dev or prod: ${White}"
+               exit 1
+               ;;
+        esac
+        }
+
+    ## check JID status
+    check_jid () {
+        job_id=$1
+        curl -s --location --request GET \
+        https://cmaapidomain1/salt/job_status/$job_id \
+        -H "X-Auth-Key: ${auth_key}" \
+        -H "X-Auth-Token: ${auth_token}"
+        }
+
+
+   check_jid_output () {
+        this_id=$1
+        curl -s --location --request GET \
+        https://cmaapidomain1/salt/jobs/$this_id \
+        -H "X-Auth-Key: ${auth_key}" \
+        -H "X-Auth-Token: ${auth_token}"
+        }
+
+
+    ## Apply states in test mode
+    apply_state_tst () {
+    myhost=$1
+    #echo "here:"
+    myout=$(curl -s --location --request POST 'https://cmaapidomain1/salt/apply_state' \
+        --header "X-Auth-Key: ${auth_key}" \
+        --header "X-Auth-Token: ${auth_token}" \
+        --header 'Content-Type: application/json' \
+        --data '[{
+        "target": "'"${myhost}"'",
+        "tgt_type": "list",
+        "file": "'"${state_file}"'",
+        "test": "true"
+        }]' )
+    echo $myout
+    }
+
+    ## Apply states & enforce changes
+    apply_state () {
+    myhost=$1
+    myout=$(curl -s --location --request POST 'https://cmaapidomain1/salt/apply_state' \
+        --header "X-Auth-Key: ${auth_key}" \
+        --header "X-Auth-Token: ${auth_token}" \
+        --header 'Content-Type: application/json' \
+        --data '[{
+        "target": "'"${myhost}"'",
+        "tgt_type": "list",
+        "file": "'"${state_file}"'"
+        }]' )
+    echo $myout
+    }
+
+    ## Apply state
+    echo "Pushing Kafka connector updates from Bitbucket to Kafka hosts"
+    if [[ ! -z "$@" ]]
+    then
+        args_parse "$@"
+    fi
+    envs_parse
+    user_parse
+    set_mode
+
+    echo
+    echo "Deploying: environment: $env_   user: $user_ "
+    echo "`date`: Deploying: environment: $env_   user: $user_ " >> $logfile
+    if [[ $apply_ = "apply_state_tst" ]]
+    then
+        echo "Deploying in test mode only..No updates are written to servers"
+        echo "`date`: Deploying in Test mode..Updates will not write" >> $logfile
+    fi
+
+    c=0
+    #for i in "${kafka_hosts[@]}"
+    for i in `echo ${host_list}`
+          do
+             ((  c++ ))
+             echo "Deploying: $i "
+             out1=$(${apply_} $i)
+             #echo $out1 ;  echo $out1 >> $tmp_log1
+             echo $out1 >> $tmp_log1
+             sleep 1
+          done
+
+    ## Check JID's state
+    while read LINE
+        do
+            myjid=$(echo $LINE | python -m json.tool | grep jid | awk '{print $2}' | sed s/,// | sed s/\"//g)
+            echo "Checking: JID: $myjid">> $logfile
+            echo "Checking...."
+            jid_out=$(check_jid $myjid)
+            echo $jid_out | grep -qi running
+            if [[ "$?" = 0 ]]; then
+                  n=0
+                  result="running"
+                  while [ $result = "running"  ]
+                    do
+                        (( n++ ))
+                        #echo "Still running JID:$myjid .. will check again($n) a sleep"
+                        echo "Still running JID:$myjid .. will check again($n) a sleep" >> $logfile
+                        #echo "checking ($n)..."
+                        echo -n "."
+                        sleep 20 
+                        jid_out="$(check_jid $myjid)"
+                        echo $jid_out | grep -qi running
+                        if [[ "$?" = 0 ]]; then
+                        result="running"
+                            if [[ $n -gt 200 ]]
+                            then
+                            echo "Running for long time.. Exiting with error"
+                            exit 1
+                            fi
+                        else
+                            echo ""
+                            #echo "Status changed for: JID: $myjid"
+                            echo $jid_out >> $tmp_log2
+                            result="not_running"
+                            jid_output=$(check_jid_output $myjid )
+                            #echo $jid_output
+                           echo "Salt Apply Output:"  >>  $logfile
+                           echo $jid_output | /usr/local/bin/jq >>  $logfile
+                        fi
+                    done
+              else
+                  #echo "Updated: JID: $myjid"
+                  #echo $jid_out ;  echo $jid_out >> $tmp_log2
+                  echo $jid_out >> $tmp_log2
+                  jid_output=$(check_jid_output $myjid )
+                  #echo $jid_output
+                  echo "Salt Apply Output:"  >>  $logfile
+                  echo $jid_output | /usr/local/bin/jq >>  $logfile
+              fi
+        done < $tmp_log1
+
+
+    ##  All completed hosts:
+    echo "Completed hosts:"
+    for j in `echo ${host_list}`
+    do
+        out2=$(grep  $j $tmp_log2 )
+        if [[ "$?" = 0 ]]; then
+            echo $out2 | grep -q complete
+            if [[ "$?" = 0 ]]; then
+               echo "$j complete"
+             else
+               echo "$j not done...Exiting"
+               exit 1
+            fi
+        else
+           echo "$j didn't run the state...Exiting"
+           exit 1
+        fi
+    done
+
+    echo "Total deployed: `cat $tmp_log2 | wc -l`"
+
+    ls /var/tmp/LOG/KAFKA/tmp_log* > /dev/null 2>&1 &&
+    {
+      cd /var/tmp/LOG/KAFKA
+      rm -f /var/tmp/LOG/KAFKA/tmp_log*
+     }
+
+

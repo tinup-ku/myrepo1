@@ -1,0 +1,93 @@
+s0968bdc,s0969bdc,s0970bdc,s0971bdc,s0972bdc,s0973bdc
+ad.jasper.dang QNJ9PJrxN?Or7d+
+MOnday:
+08/27/2018
+s0974bdc,s0975bdc,s0976bdc,s0977bdc,s0978bdc,s0979bdc
+Wed:
+s0980bdc s0981bdc s0982bdc s0983bdc
+s0980bdc,s0981bdc,s0982bdc,s0983bdc
+Tue 9/4/18:
+ad.jasper.dang 1ZUrfWrAA?f5UKm
+s0456cdc s0457cdc s0458cdc s0459cdc s0460cdc s0461cdc
+s0456cdc,s0457cdc,s0458cdc,s0459cdc,s0460cdc,s0461cdc
+Wed 9/6/18:
+nobKgAp-hO3DEca
+s0462cdc s0463cdc s0464cdc s0465cdc s0466cdc s0467cdc
+s0462cdc,s0463cdc,s0464cdc,s0465cdc,s0466cdc,s0467cdc
+Tues 9/11/2018:
+9?FwViOo75?b5nV
+s0468cdc s0469cdc s0470cdc s0471cdc s0472cdc s1018cdc
+s0468cdc,s0469cdc,s0470cdc,s0471cdc,s0472cdc,s1018cdc
+THu:09/20/2018
+ExW5yhx$+thjNrK
+Acc3ss-0o8_0p3@tor
+
+s1031cdc s1032cdc s1033cdc s1034cdc s1035cdc
+s1031cdc,s1032cdc,s1033cdc,s1034cdc,s1035cdc
+
+
+Thu 09/13/2018
+AU?0D+qFNwh0xtV
+s1019cdc s1020cdc s1021cdc s1022cdc s1023cdc s1024cdc
+s1019cdc,s1020cdc,s1021cdc,s1022cdc,s1023cdc,s1024cdc
+ Tues: 09/18/2018
+D4R$paj5broGU33
+
+
+s1025cdc s1026cdc s1027cdc s1028cdc s1029cdc s1030cdc
+s1025cdc,s1026cdc,s1027cdc,s1028cdc,s1029cdc,s1030cdc
+
+
+STEPS:
+
+On Splunk Indexer:
+
+1.	As root,
+splunk_offline
+
+2.	Contact Paul Good to install 2x1.5TB SSDs on slots 13 and 14
+Once drives added, verify 
+
+perccli /c0/dall show all|grep -A10 'UN-CONFIGURED DRIVE LIST'
+
+
+3.	Disable splunk when system boots up.
+cd /etc/init.d && mv splunk Splunk;ls -l Splunk
+
+4.
+
+cd;cd SSD_ADD
+sh ./1.Backup_SSD_RAID1
+This will backup /opt/splunkindexhot_data to /opt/splunkindex_data/SSD_BACKUP then comment out, in /etc/fstab,
+
+/dev/hotvg/hot_lvm1 /opt/splunkindexhot_data ext4 noatime,errors=remount-ro 1 2
+
+5.	Reboot via `shutdown -r now`
+
+6.	When the system is up, as root
+
+cd;cd SSD_ADD
+
+sh ./2.remove_SSD_RAID1
+
+This will remove LVM associated w/ RAID1 virtual device: hot_lvm1, hotvg, and its pv.
+Example:
+hot_lvm1   hotvg  -wi-ao---- 223.00g
+/dev/sdb1  hotvg  lvm2 a--  223.00g      0
+
+7.	Create RAID6 with slots: 0, 1, 13, ad 14; format/create file system on new virtual drive and its LVM, mount /opt/splunkindexhot_data then
+Retrieve from /opt/splunkindex_data/SSD_BACKUP.
+               
+cd;cd SSD_ADD
+sh ./3.create_RAID6_copy_files_to_hot_SSD
+Make sure /opt/splunkindexhot_date UID:GID is svc.eli_admin.prod:unx_9998_access
+
+cd /opt && chown -R svc.eli_admin.prod:unx_9998_access splunkindexhot_data
+
+8.	When the system is back online, verify /opt/splunkindexhot_data is mounting
+
+9.	Enable splunk at system start up then start splunk
+cd /etc/init.d && mv -f Splunk splunk
+start_splunk
+
+10.	Log into Master https://svm0859cdc.cdc.schwab.com:8000 and verify indexer is seen then observe buckets status.

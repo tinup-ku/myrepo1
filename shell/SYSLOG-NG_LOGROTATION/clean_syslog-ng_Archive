@@ -1,0 +1,25 @@
+#!/bin/bash
+#################################################################################
+# This script is to delete files in /opt/syslog-ng/Archive for the following 
+# directories:
+# ca-cem  f5  f5sec  f5system  Kiteworks  netcool  netscaler  unknown
+# 
+# These files come from daily cron job
+# 0 5 * * * /usr/local/bin/clean_syslog-ng
+# 
+# Daily cron to clean up ${ARCHIVE} is at 4AM EST for all files older then 3 days
+# 0 4 * * * /usr/local/bin/clean_syslog-ng_Archive
+#################################################################################
+# Written by user1 | T O S Splunk Platform
+ARCHIVE=/opt/syslog-ng/Archive
+{
+echo "START: `date` ##########"
+echo "List of files to be deleted in  ${ARCHIVE}"
+cd ${ARCHIVE} && find . -type f ! -mmin -4320 -exec ls -l {} +
+echo
+echo "Deleting files older than 3 days in ${ARCHIVE}"
+cd ${ARCHIVE} && find . -type f ! -mmin -4320 -exec rm -f {} +
+echo "END: `date`"
+} >> /var/tmp/`basename $0`.out
+
+

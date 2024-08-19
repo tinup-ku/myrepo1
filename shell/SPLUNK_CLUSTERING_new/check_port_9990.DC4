@@ -1,0 +1,32 @@
+#!/bin/bash
+Indexer_site1="s0018loc3
+s0019loc3
+s0020loc3
+s0021loc3
+s0022loc3
+s0023loc3
+s0024loc3
+s0025loc3
+s0026loc3
+s0027loc3"
+
+
+Indexer_site2="s0028loc3
+s0029loc3
+s0030loc3
+s0031loc3
+s0032loc3
+s0033loc3
+s0034loc3
+s0035loc3
+s0036loc3
+s0037loc3"
+
+
+ALL="${Indexer_site1} ${Indexer_site2}"
+
+   for indxr in ${ALL}
+   do
+      echo "$indxr --> checking $indxr port ` nmap -sS -O -p 9990 $indxr|grep '^9990'`"
+   done
+

@@ -1,0 +1,117 @@
+app.conf example:
+
+----- cut here -----
+#
+#   Splunk App Ownership
+#
+#   Technical Owner :: tradingsaveom@schwab.com 
+#   Business Owner  :: Dale Nowak, Dale.Nowak@Schwab.com
+#   Distribution    :: OESproductionsupport@schwab.com
+#   
+#   App Name        :: OES
+#   Description     :: The OES includes applications that support Order Management System (OEMS) for exchange requests.  
+#   APMIDs          :: AD6598
+#
+----- cut here -----
+As root
+cd /root/bitbucket
+mkdir -p jasper.dang
+cd jasper.dang
+git clone https://jasper.dang@bitbucket.schwab.com/scm/ad00203364/tos_splunk_core.git
+then cd /bitbucket/jasper.dang/tos_splunk_core/tools
+[root@svm0934cdc tools]# ls -l
+total 20
+-rwxr-xr-x 1 root root 12704 Oct 15 14:15 appPkg-prod.sh
+-rwxr-xr-x 1 root root  3169 Oct 15 14:15 exportMAPR.sh
+
+OR,
+
+git clone https://jasper.dang@bitbucket.schwab.com/scm/ad00203364/tos_splunk_apps.git
+
+# /root/bitbucket/jasper.dang/tos_splunk_apps created
+# App's path: /root/bitbucket/jasper.dang/tos_splunk_apps/shcluster/search/apps
+
+vi /bitbucket/jasper.dang/tos_splunk_apps/.git/config
+
+# Add user stanza
+[user]
+        name = Dang, Jasper
+        email = jasper.dang@schwab.com
+
+1. cd /bitbucket/jasper.dang/tos_splunk_core/tools
+2. cd /bitbucket/jasper.dang/tos_splunk_apps/shcluster/search/apps
+
+[root@svm4189cdc search]# git branch
+  dev
+  feature/TOS-3255-migrate-app-metsloggingtiersearchapp
+* master
+  release/Promotion-20181213
+  stable
+
+[root@svm4189cdc search]# git status
+# On branch master
+nothing to commit (working directory clean)
+
+
+#######
+# Example of Preprod and PROD SH cluster push on TOS-3535
+
+# Commit current DEV feature back on current working TOS-3255: METSLoggingTierSearchApp
+git add -A
+git commit -am "Updating METs app, TOS-3255"
+git push
+
+# Now ready to work on TOS-3535:
+1. git checkout -q stable && git pull
+2. git checkout -q master && git pull
+
+# Note, since Val's app, SCH_DesktopCentral_app, is yet to include in TOS-3535, add it
+git checkout -q stable SCH_DesktopCentral_app
+git add * && git commit -am "Updating SCH_DesktopCentral_app, TOS-3535"
+git push
+
+# Now ready to go to to Preprod and PROD SH Deployers: svm4744bdc and svm0860cdc then run
+As svc.eli_admin.prod,
+
+PREPROD Deployer:
+/opt/splunk/bin/splunk apply shcluster-bundle -target https://svm0028bdc.cdc.schwab.com:8089 -preserve-lookups true
+
+PROD Deployer:
+/opt/splunk/bin/splunk apply shcluster-bundle -target https://svm4351cdc.cdc.schwab.com:8089 -preserve-lookups true
+
+Then wait until prompt is back.
+
+1/22/2019:
+Note: Once TOS-3255 savedsearches.conf and app.conf updated, commit back to bitbucket
+
+----- cut here --------------
+[root@svm4189cdc local]# git add -A
+[root@svm4189cdc local]# pwd
+/root/bitbucket/jasper.dang/tos_splunk_apps/shcluster/search/apps/SCH_METSLoggingTierSearchApp_app/local
+[root@svm4189cdc local]# git commit -am "Updating SCH_METSLoggingTierSearchApp_app, TOS-3255"
+[feature/TOS-3255-migrate-app-metsloggingtiersearchapp 3f6e7ff] Updating SCH_METSLoggingTierSearchApp_app, TOS-3255
+ 3 files changed, 22 insertions(+), 1438 deletions(-)
+ create mode 100644 shcluster/search/apps/SCH_METSLoggingTierSearchApp_app/local/.savedsearches.conf.swp
+ delete mode 100644 shcluster/search/apps/SCH_METSLoggingTierSearchApp_app/local/savedsearches.conf.01152019
+[root@svm4189cdc local]# git push
+Password:
+Counting objects: 16, done.
+Delta compression using up to 6 threads.
+Compressing objects: 100% (8/8), done.
+Writing objects: 100% (9/9), 3.46 KiB, done.
+Total 9 (delta 6), reused 0 (delta 0)
+remote:
+remote: Create pull request for feature/TOS-3255-migrate-app-metsloggingtiersearchapp:
+remote:   https://bitbucket.schwab.com/projects/AD00203364/repos/tos_splunk_apps/compare/commits?sourceBranch=refs/heads/feature/TOS-3255-migrate-app-metsloggingtiersearchapp
+remote:
+To https://jasper.dang@bitbucket.schwab.com/scm/ad00203364/tos_splunk_apps.git
+   48ed0ee..3f6e7ff  feature/TOS-3255-migrate-app-metsloggingtiersearchapp -> feature/TOS-3255-migrate-app-metsloggingtiersearchapp
+ ! [rejected]        master -> master (non-fast-forward)
+ ! [rejected]        stable -> stable (non-fast-forward)
+error: failed to push some refs to 'https://jasper.dang@bitbucket.schwab.com/scm/ad00203364/tos_splunk_apps.git'
+To prevent you from losing history, non-fast-forward updates were rejected
+Merge the remote changes before pushing again.  See the 'Note about
+fast-forwards' section of 'git push --help' for details.
+[root@svm4189cdc local]#
+----- cut here --------------
+

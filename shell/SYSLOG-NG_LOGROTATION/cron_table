@@ -1,0 +1,5 @@
+55 02 * * * /bin/systemctl restart goferd
+57 8 * * * /usr/local/bin/get-ssh-keys.pl > /tmp/get-ssh-keys.cron.`date +%F%H%M%S` 2>&1
+0 1 * * * /usr/sbin/logrotate /etc/logrotate.d/syslog-ng >>/tmp/syslog-ng.out 2>&1
+0 3 * * * /usr/local/bin/clean_syslog-ng
+0 4 * * * /usr/local/bin/clean_syslog-ng_Archive

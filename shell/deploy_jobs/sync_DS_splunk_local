@@ -1,0 +1,74 @@
+[root@some_loc11-012458 ~]# cat /usr/local/bin/sync_DS_splunk_local
+#!/bin/bash
+#############################################################################
+# https://jiradomain1/browse/TOS-20023
+# This script sync's the followings from source some_loc11-012458's ${SPLUNK_LOCAL}
+# to Splunk Deployment Servers Farm via rsync
+# ${SPLUNK_LOCAL}:
+# . limits.conf
+# . props.conf
+# . times.conf
+# . ui-prefs.conf
+# . web.conf
+# . outputs.conf
+# . authorize.conf
+# . serverclass.conf
+#
+# SOURCE DS: DNS splunkdeploymentserverdomain1
+# some_loc11-012458
+#
+# DESTINATION Deployment Servers:  F5 LB splunkdeploymentserverdomain1
+# some_loc12-011215
+# some_loc11-012465
+# some_loc12-011224
+# some_loc17-006076
+# some_loc17-006078
+# some_loc14-011621
+# some_loc14-011648
+#
+# REQUIREMENTS:
+# 1. Trust relationship from SOURCE to DESTINATION DS
+#    NOTE, If any change in ${SPLUNK_LOCAL} in DS Farm, only make change on some_loc11-012458
+#    then run this script from some_loc11-012458 to sync to the 7 remain nodes.
+# 2. Daily cronjob on SOURCE
+#    30 23 * * *  ${LOCAL_BIN}/$0
+# 3. ANY change to ${SPLUNK_LOCAL} file list above MUST be done on SOURCE DS
+#############################################################################
+# Written by user1 | S P L U N K Platform Support
+date_=$(date '+%a%H%M_%m%d%Y')
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+DS_Farm="
+some_loc12-011215
+some_loc11-012465
+some_loc12-011224
+some_loc17-006076
+some_loc17-006078
+some_loc14-011621
+some_loc14-011648"
+
+SPLUNK_LOCAL_list="limits.conf
+props.conf
+times.conf
+ui-prefs.conf
+web.conf
+outputs.conf
+serverclass.conf
+authorize.conf"
+
+[[ ! -d /var/tmp/LOG ]] && mkdir /var/tmp/LOG
+{
+  cd ${SPLUNK_LOCAL} && {
+     for node in ${DS_Farm}
+     do
+       echo "`date`: Sync'ing DS $node:"
+       # rsync options:
+       # o: Preserve UID
+       # g: Preserve GID
+       # i: Output a change-summary for all updates
+       # p: Maintain file permission similar to Source
+       # t: Keep file Modification time similar to Source
+       rsync -ogipt ${SPLUNK_LOCAL_list} ${node}:${SPLUNK_LOCAL} 2>/dev/null
+     done
+  }
+} | tee /var/tmp/LOG/`basename $0`.${date_}.OUT
+

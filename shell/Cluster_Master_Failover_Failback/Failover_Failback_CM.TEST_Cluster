@@ -1,0 +1,273 @@
+
+Splunk Articles:
+https://docs.splunk.com/Documentation/Splunk/8.2.1/Indexer/Managersitefailure
+https://docs.splunk.com/Documentation/Splunk/8.2.1/Indexer/Handlemanagernodefailure
+https://docs.splunk.com/Documentation/Splunk/8.2.1/Indexer/Restartindexing
+
+TEST Index and Search Head cluster: (current splunk version 8.2.1)
+
+. TEST Indexers $CLUSTER
+  PDC1: PDC1_TEST_Indexers
+  PDC3: PDC3_TEST_Indexers
+  LUMP: All_TEST_Indexers
+  Cluster Masters:
+    - Primary: ser13279pdv
+    - Backup:  ser13279bdv
+
+. TEST SH cluster and standalone
+
+  - SH Cluster:
+    GROUP:PDC1_TEST_Search_SH
+    ser13285pdv
+    ser13286pdv
+    ser13291pdv
+    ser13292pdv
+    GROUP:PDC3_TEST_Search_SH
+    ser13283bdv
+    ser13284bdv
+    LUMP:All_TEST_Search_SH
+    PDC1_TEST_Search_SH
+    PDC3_TEST_Search_SH  
+
+  - Standalone: ser13282pdv,ser13282bdv
+
+#####################
+PREPARATION STEPS:
+#####################
+
+  1. Currently all Indexers and search heads are pointing to 
+     https://splunktestmaster.devdomain1:8089, or
+     https://ser13279pdv.devdomain1:8089
+
+     - Create/Stage ${SPLUNK_LOCAL}/server.conf.FAILOVER on all Indexers and SHs pointing
+       to Backup Cluster Master, ser13279bdv 
+
+       On DEV Control server,cud2-008140, as root
+
+       [root@cud2-008140 ~]#  jldsh -eg All_TEST_Indexers,All_TEST_Search_SH -ew ser13282pdv,ser13282bdv "cd /opt/splunk/etc/system/local;sed -e 's/splunktestmaster.devdomain1/ser13279bdv.devdomain1/g' -e 's/ser13279pdv.devdomain1/ser13279bdv.devdomain1/g' server.conf > server.conf.FAILOVER"
+
+       Verify:
+
+----- cut here -----
+
+     [root@cud2-008140 ~]# !!|dshbak
+     jldsh -eg All_TEST_Indexers,All_TEST_Search_SH -ew ser13282pdv,ser13282bdv "cd /opt/splunk/etc/system/local;diff server.conf server.conf.FAILOVER"|dshbak
+---------------
+Node ser13287pdv
+---------------
+30c30
+< master_uri = https //splunktestmaster.devdomain1 8089
+---
+> master_uri = https //ser13279bdv.devdomain1 8089
+
+---------------
+Node ser13282bdv
+---------------
+31c31
+< master_uri = https //ser13279pdv.devdomain1 8089
+---
+> master_uri = https //ser13279bdv.devdomain1 8089
+
+----- cut here -----
+
+ 2. On All current Indexers and Search Heads, make a backup ${SPLUNK_LOCAL}/server.conf:
+    ${SPLUNK_LOCAL}/server.conf --> ${SPLUNK_LOCAL}/server.conf.PRIMARY
+
+    [root@cud2-008140 ~]# jldsh -eg All_TEST_Indexers,All_TEST_Search_SH -ew ser13282pdv,ser13282bdv "cd /opt/splunk/etc/system/local;cp -f server.conf server.conf.PRIMARY"
+
+ 3. On Backup CM, ser13279bdv:/opt/splunk/etc/system/local, 
+    3.1 make a backup
+    cd /opt/splunk/etc/system/local && cp -f server.conf server.conf.BCK 
+
+ 4. On both Cluster Masters, set up trust relationship between 
+    - Primary PDC1_TEST_Index_Cluster_Master: ser13279pdv and
+    - Backup PDC3_TEST_Index_Cluster_Master: ser13279bdv
+   
+    4.1. On Primary cluster master, ser13282pdv, Setup rsync via cron to backup CM
+         - ser13282pdv:${SPLUNK_HOME}/etc/master-apps and
+         - ser13282pdv:${SPLUNK_HOME}/var/run/splunk/cluster/remote-bundle/ directory
+
+         ser13279pdv's cron job:
+
+         0 12,15,18,21 * * * rsync -arv --delete ${SPLUNK_HOME}/etc/master-apps ser13279bdv:${SPLUNK_HOME}/etc/ 2>/dev/null
+         0 12,15,18,21 * * * rsync -arv --delete ${SPLUNK_HOME}/var/run/splunk/cluster/remote-bundle ser13279bdv:${SPLUNK_HOME}/var/run/splunk/cluster/ 2>/dev/null
+
+3. On Backup cluster master, ser13279bdv, $SPLUNK_HOME/etc/system/local, follow steps
+   from the link below. 
+
+   https://docs.splunk.com/Documentation/Splunk/8.2.1/Indexer/Handlemanagernodefailure
+   Steps:
+
+If you want to skip steps 3 and 5, you can replace the [general] and [clustering] stanzas on the replacement manager in step 4, instead of copying the entire server.conf file.
+
+      3.1 Stop the old manager, if this is a planned replacement. If the replacement is due to a failed manager, then this step has already been accomplished for you.
+          
+         Steps:
+         On primary cluster master, ser13279pdv, disable Splunk@start up and stop splunk
+         As root,
+         
+         systemctl disable Splunkd
+         systemctl stop Splunkd
+          
+      3.2 Install, start, and stop a new Splunk Enterprise instance. Alternatively, you can reuse an existing instance that is not needed for another purpose. This will be the replacement manager.
+         
+         Steps:
+         - On backup cluster master ser13279bdv
+           . Splunk 8.2.1 already installed   
+           . ${SPLUNK_LOCAL}: web.conf, server.conf 
+
+      SKIP 3.3 - 3.5
+      3.3 SKIP***** Copy the sslPassword setting from the replacement manager's server.conf file to a temporary location.
+      3.4 SKIP***** Copy the backup of the old manager's server.conf file to the replacement manager.
+      3.5 SKIP*****Delete the sslPassword setting in the copied server.conf, and replace it with the version of the setting that you saved in step 3.
+
+      3.6 Delete the encrypted value for pass4symmkey in the copied server.conf, and replace it with the plain text value. See Configure the security key.
+
+
+
+      3.7 Copy the backup of the old manager's $SPLUNK_HOME/etc/master-apps directory to the replacement manager.
+
+          Steps:
+          Primary CM, ser1329pdv, daily cron job:
+          
+          0 12,15,18,21 * * * rsync -arv --delete ${SPLUNK_HOME}/etc/master-apps ser13279bdv:${SPLUNK_HOME}/etc/ 2>/dev/null
+
+
+      3.8 Copy the backup of the old manager's $SPLUNK_HOME/var/run/splunk/cluster/remote-bundle/ directory to the new manager.
+
+          Steps:
+          On Primary CM, ser1329pdv, daily cron job:
+
+          0 12,15,18,21 * * * rsync -arv --delete ${SPLUNK_HOME}/var/run/splunk/cluster/remote-bundle ser13279bdv:${SPLUNK_HOME}/var/run/splunk/cluster/ 2>/dev/null
+
+#####################
+IMPLEMENTATION STEPS
+#####################
+
+      3.9 Start the replacement manager.
+
+          Steps:
+          On Backup/DR cluster master, ser13279bdv, as root
+
+          3.9.1 Enable/start Splunkd. As root,
+
+                systemctl enable Splunkd
+                systemctl start Splunkd
+
+          3.9.2 Check w/ Splunk Support on this step?????? (Splunk verified)
+
+                Run, as svc_act2, 
+
+                `${SPLUNK_BIN}/splunk set indexing-ready -auth admin;${key}`
+
+                Ref: https://docs.splunk.com/Documentation/Splunk/7.2.6/Indexer/Restartindexing
+
+      3.10 Make sure that the peer and search head nodes are pointing to the new manager through one of the methods described in Ensure that the peer and search head nodes can find the new manager.
+
+          Steps:
+           . On Index clusters, copy staged 
+             ${SPLUNK_LOCAL}/server.conf.FAILOVER 
+             to
+             ${SPLUNK_LOCAL}/server.conf
+
+             On Splunk control server, cud2-008140, as root
+
+             jldsh -eg All_TEST_Indexers "cd /opt/splunk/etc/system/local;cp -f server.conf.FAILOVER server.conf"
+
+            . On SH clusters and all standalone SHs,
+
+             jldsh -eg All_TEST_Search_SH -ew ser13282pdv,ser13282bdv "cd /opt/splunk/etc/system/local;cp -f server.conf.FAILOVER server.conf"
+
+
+Questions for Splunk.
+1. On Search Head cluster and standalone search head, rolling restart/restart splunk on all SHs
+
+2. On Indexers, how do we restart Splunk?
+
+####################################
+${SPLUNK_LOCAL}/server.conf SECTION
+####################################
+
+-------------------------------------------------
+1. PRIMARY ser13279pdv:${SPLUNK_LOCAL}/server.conf
+-------------------------------------------------
+
+----- BEGIN cut here from Primary ser13279pdv server.conf -----
+
+[general]
+site = site1
+serverName = ser13279pdv
+pass4SymmKey = $1$rOy88TmBpHkT
+
+[sslConfig]
+sslPassword = $1$+6DorXzH7ysT
+
+[clustering]
+mode = master
+replication_factor = 1
+search_factor = 1
+multisite = true
+available_sites = site1,site2
+site_replication_factor = origin:1,total:2
+site_search_factor = origin:1,total:2
+pass4SymmKey = $1$u+Gu6z2IvG8mO4Q5
+cluster_label = testcluster
+maintenance_mode = false
+
+
+[license]
+master_uri = https://ser13280pdv:8089
+
+[kvstore]
+disabled = true
+
+----- END cut here -----
+
+------------------------------------------------------------------
+2. BACKUP/DR cluster master ser13279bdv:${SPLUNK_LOCAL}/server.conf
+------------------------------------------------------------------
+
+Next, on ser13279bdv:/opt/splunk/etc/system/local/server.conf.FAILOVER, append
+the above.
+
+The result,
+
+----- BEGIN server.conf.FAILOVER -----
+[general]
+serverName = ser13279bdv
+pass4SymmKey = $7$Gypm+/4+aKZ1A+AppO2W+6svcJXKDZDb7qHat0oATyxznY17pbmHNw==
+
+[sslConfig]
+sslPassword = $7$f7xCK3gBXiMbiJ6wGDAgs52bUk2QIJRxp+nuwrbqPs3FWp4FMihtpg==
+                                  
+[license]
+master_uri = https://ser13280pdv:8089
+
+[clustering]
+mode = master
+replication_factor = 1
+search_factor = 1
+multisite = true
+available_sites = site1,site2
+site_replication_factor = origin:1,total:2
+site_search_factor = origin:1,total:2
+pass4SymmKey = testcluster  --> step 6
+cluster_label = testcluster
+
+[license]
+master_uri = https://ser13280pdv:8089
+
+[kvstore]
+disabled = true
+
+----- END server.conf.FAILOVER -----
+
+
+************ 8/30/2021 ************
+Splunk recommended to 
+1. ultilize splunk.secret
+2. F5 LB 
+   - Ask F5 Team options for splunkmasternodedomain1. Sticky/Persistent?
+3. *nix... Add F5 DNS IP for splunkmasternodedomain1
+
+
