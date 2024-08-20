@@ -1,0 +1,410 @@
+#!/bin/ksh
+#####################################################################################
+# This script perform the following tasks:
+# 1. Configure some_loc14-010472domain1 as the Primary Master 
+#    for Multisite Index
+#    LUMP:CD1_D_All_DC74_E-F_core_site12
+#    CD1_D_DC7_E-core_site1
+#    CD1_D_DC7_F-core_site1
+#    CD1_D_DC4_E-core_site2
+#    CD1_D_DC4_F-core_site2
+#    GROUP:CD1_D_Primary_Cluster_Master
+#    some_loc14-010472
+#    clustering. DNS CNAME splunkmasternode-cd1-ddomain1 
+#    will be used rather than server hostname.
+#
+# 2. Configure all Indexers (E and F-core Network) at DC7/4. List of servers
+#    defined in $CLUSTER.
+#
+# 3. Configure Search Head to point to some_loc14-010472domain1
+#####################################################################################
+# Written By JPD | com2 Data Intelligence
+#
+SPLUNK_LOCAL=/opt/splunk/etc/system/local
+SVC_ACCT=`ls -ld /opt/splunk|awk '{print $3}'`
+
+
+usage ()
+{
+cat<<END
+
+Usage: $0 
+
+Where: -M master_node
+       -P Add New Peer Indexers to Master node
+       -S Search_head (site specific)
+
+END
+exit 1
+}
+
+restart_splunkd ()
+{
+   echo;echo
+   echo -n "Restarting splunk on $1 (Y|N)? "
+   read ans
+   case $ans in
+                 Y|y )
+                      echo "Stopping splunkd..."
+                      #ssh $1 "stop_splunk" 2>/dev/null
+                      ssh -q $1 "systemctl stop Splunkd" 2>/dev/null
+                      sleep 1
+                      echo "Starting splunkd..."
+                      ssh -q $1 "systemctl start Splunkd" 2>/dev/null
+                      ;;
+                   * )
+                      echo "In order for $1 to be Splunk multisite SH clustering, splunkd has to be restarted."
+                      echo;echo
+                      break
+                      ;;
+   esac
+
+}
+
+get_key ()
+{
+  env_=`echo $1 | awk -F. '{print $1}'|grep -o '...$'`
+  {
+    eval `gpg --batch --xyz xyz -d /.splunk` >/dev/null 2>&1
+  } 2>/dev/null
+  case ${env_} in
+         pdv | bdv ) uid=svc_act2
+                     key=${dev}
+                     ;;
+   some_loc | loc2 | loc3 ) uid=svc_act1
+                     maprticket=maprticket_500327
+                     key=${prod}
+                     ;;
+                 * )
+                     case $1 in
+                               some_loc1* ) uid=svc_act1
+                                      key=${prod}
+                                      ;;
+                         cud*| cut* ) uid=svc_act2
+                                      key=$dev
+                                      ;;
+                     esac
+                    ;;
+  esac
+}
+
+##########
+# M A I N
+##########
+
+while [ 1 ]
+do
+#clear
+cat<<END
+####################################################################
+Configure Splunk Multisite Index Clustering
+
+M) Master node
+P) Add New Peer Indexers to Master node
+S) Search Head
+Q)uit
+
+####################################################################
+
+END
+echo -n "Enter choice [ M|P|S|Q ]? "
+read ans
+
+case $ans in
+   M|m )
+        echo -n "Enter Cluster Master hostname.fqdn (some_loc14-010472domain1)? "
+        read master
+        host $master|grep "not found:" >/dev/null
+        [[ "$?" = "0" ]] && {
+            echo "$master is not in DNS. Abort."
+            exit
+         }
+
+        get_key $master
+        echo "Checking if $master is configured with Multisite..."
+        site_rf=`ssh -q $master "cd ${SPLUNK_LOCAL};grep '^site_replication_factor' server.conf" 2>/dev/null|awk '{print $NF}'`
+        site_sf=`ssh -q $master "cd ${SPLUNK_LOCAL};grep '^site_search_factor' server.conf" 2>/dev/null|awk '{print $NF}'`
+
+
+        if [[ -z $site_rf ]]
+        then
+            count=0
+            while [[ 1 ]]
+            do
+               echo -n "Replication Factor (1...3)? "
+               read rf
+               if [[ $rf -gt 0 ]] && [[ $rf -le 3 ]]
+               then
+                  break
+               else
+                  echo "Replication Factor must be between 1 and 3. Try again"
+                  count=$((count + 1))
+                  [[ $count -eq 3 ]] && {
+                     echo "Third time is a charm but not this case. Abort"
+                     exit
+                  }
+               fi
+            done
+
+            [[ -z $site_sf ]] && {
+                count=0
+                while [[ 1 ]]
+                do
+                   echo -n "Search Factor (1...2)? "
+                   read sf
+                   if [[ $sf -gt 0 ]] && [[ $sf -le 2 ]]
+                   then
+                      break
+                   else
+                      echo "Search Factor must be between 1 and 2. Try again"
+                      count=$((count + 1))
+                      [[ $count -eq 3 ]] && {
+                         echo "Third time is a charm but not this case. Abort"
+                         exit
+                      }
+                   fi
+                done
+             }
+
+             echo 
+             echo -n "Enter cluster label (ie, prodcluster_4-loc44)? "
+             read label
+             echo
+             echo  -n "Enter Cluster Security Key (prodcluster_4-loc44)? "
+             read secret_key
+
+             echo "Below are parameters for the Master node:"
+             echo
+             echo "Multi Site Master node: $master"
+             echo "site_replication_factor: ${rf}"
+             echo "site_search_factor: ${sf}"
+             echo "Cluster Label: $label"
+             echo "Cluster Security Key: ${secret_key}"
+             echo
+             echo -n "Hit ENTER to proceed "
+             read
+             # Add site = site3 to [general] stanza
+             ssh -q $master "cd ${SPLUNK_LOCAL} && /bin/cp server.conf server.conf.ORIG" >/dev/null 2>&1
+             ssh -q $master "sed -i '/\[general/a site = site1' /opt/splunk/etc/system/local/server.conf" >/dev/null 2>&1
+             # Add [clustering] stanza to server.conf             
+             [[ ! -d /root/SPLUNK_CLUSTERING/DC74/Master-DC74 ]] && \
+             mkdir -p /root/SPLUNK_CLUSTERING/DC74/Master-DC74
+             cat<<END > /root/SPLUNK_CLUSTERING/DC74/Master-DC74/${master}.master
+
+[clustering]
+mode = master
+replication_factor = 1
+search_factor = 1
+multisite = true
+available_sites = site1,site2
+site_replication_factor = origin:1,total:${rf}
+site_search_factor = origin:1,total:${sf}
+pass4SymmKey = ${secret_key}
+cluster_label = ${label}
+max_peers_to_download_bundle = 10
+### 240 secs for restart to avoid restarting next before prior one is up - 20180423 Gerry
+### currently indexer takes ~120 secs to restart. increase this if it takes longer than 240 secs.
+restart_timeout = 240
+## 03/03/2019 START
+service_interval = 10
+heartbeat_timeout = 1800
+cxn_timeout = 300
+send_timeout = 300
+rcv_timeout = 300
+max_peer_build_load = 5
+## 03/03/2019 END
+
+[kvstore]
+disabled = true
+
+END
+
+             echo
+             scp -q /root/SPLUNK_CLUSTERING/DC74/Master-DC74/${master}.master ${master}:/tmp >/dev/null 2>&1
+             ssh -q $master "cd ${SPLUNK_LOCAL} && cat server.conf /tmp/${master}.master >> server.conf" >/dev/null 2>&1
+
+             echo "Verifying $master:$SPLUNK_LOCAL/server.conf"
+             ssh -q $master "cd ${SPLUNK_LOCAL} && grep -A1 '^site_replication_factor' server.conf" >/dev/null 2>&1
+
+             echo
+             restart_splunkd $master
+             echo
+             echo "Once splunkd restarted, http://${master}:8000 and login as admin then observe new Indexers checking in."
+             echo
+             echo "If you prefer, log into ${master}. As ${SVC_ACCT}, "
+             echo "/opt/splunk/bin/splunk login -auth admin:${key} then"
+             echo "/opt/splunk/bin/splunk list cluster-peers|grep label"
+             echo
+        else
+            echo
+            echo "$master is already configured as Single site Index Clustering"
+            echo
+        fi
+        ;;
+   P|p )
+        # 
+        echo "There are 2 sites: site1 (DC7) and site2 (DC4) ready to configure:"
+        echo "DC7 site1 (E-core):"
+        loc4_site1_E=`jldsh -eg CD1_D_DC7_E-core_site1 "echo"|sed 's/://g'`
+        echo $loc4_site1_E
+        echo
+   #    echo "DC7 site1 (F-core):" 
+   #    loc4_site1_F=`jldsh -eg CD1_D_DC7_F-core_site1 "echo"|sed 's/://g'`
+   #    echo $loc4_site1_F
+   #    echo
+   #    echo "DC4 site2 (E-core):"
+   #    loc5_site2_E=`jldsh -eg CD1_D_DC4_E-core_site2 "echo"|sed 's/://g'`
+   #    echo $loc5_site2_E
+   #    echo
+        echo "DC4 site2 (F-core):"
+        loc5_site2_F=`jldsh -eg CD1_D_DC4_F-core_site2 "echo"|sed 's/://g'`
+        echo $loc5_site2_F
+        echo
+        echo -n "Enter Master DNS CName (some_loc14-010472domain1)? "
+        read master
+        echo -n "Enter site number (1|2)? "
+        read number
+        case $number in
+             1 )
+                site="${loc4_site1_E} ${loc4_site1_F}"
+                ;;
+             2 )
+                site="${loc5_site2_E} ${loc5_site2_F}"
+                ;;
+             * )
+                echo "$number is INCORRECT. Abort"
+                exit
+                ;;
+        esac
+
+        echo -n "Enter Cluster Security Key (prodcluster_4-loc44): "
+        read secret_key
+        echo
+
+        mkdir -p /root/SPLUNK_CLUSTERING/DC74/Indexers >/dev/null
+        
+        echo "The following stanzas will be added to Indexer:"
+        echo
+        cat<<END > /root/SPLUNK_CLUSTERING/DC74/Indexers/indexer.template
+
+[kvstore]
+disabled = true
+
+[replication_port://9887]
+
+[clustering]
+cxn_timeout = 600
+send_timeout = 600
+rcv_timeout = 600
+heartbeat_period = 10
+master_uri = https://${master}:8089
+mode = slave
+pass4SymmKey = ${secret_key}
+
+[queue]
+maxSize = 5MB
+
+[queue=parsingQueue]
+maxSize = 5MB
+
+[queue=aggQueue]
+maxSize = 5MB
+
+[queue=typingQueue]
+maxSize = 5MB
+
+[queue=indexQueue]
+maxSize = 5GB
+
+END
+        if [[ -f /root/SPLUNK_CLUSTERING/DC74/Indexers/indexer.template ]]
+        then
+           echo
+           echo "------------ cut here ------------"
+           cat /root/SPLUNK_CLUSTERING/DC74/Indexers/indexer.template
+           echo "------------ cut here ------------"
+        else
+           echo "/root/SPLUNK_CLUSTERING/DC74/Indexers/indexer.template doesnot exist."
+           break
+        fi
+       
+        # Check if peer is multisite configured.
+        for node in ${site}
+        do
+          echo "Configuring $node for site${number}"
+          site=`ssh -q $node "cd ${SPLUNK_LOCAL};grep '^site' server.conf" 2>/dev/null`
+          mode=`ssh -q $node "cd ${SPLUNK_LOCAL};grep '^mode' server.conf" 2>/dev/null`
+          if [[ -z $site ]] && [[ -z $mode ]]
+          then
+             # Back up server.conf
+             echo "Backing up $node:${SPLUNK_LOCAL}/server.conf to server.conf.ORIG"
+             ssh -q $node "cd ${SPLUNK_LOCAL} && /bin/cp server.conf server.conf.ORIG" >/dev/null 2>&1
+
+             scp -q /root/SPLUNK_CLUSTERING/DC74/Indexers/indexer.template $node:/tmp/indexer.template  >/dev/null 2>&1
+
+             case ${number} in
+                  1 )
+                     ssh -q $node "sed -i '/\[general/a site = site1' ${SPLUNK_LOCAL}/server.conf"  >/dev/null 2>&1
+                    ;;
+                  2 )
+                     ssh -q $node "sed -i '/\[general/a site = site2' ${SPLUNK_LOCAL}/server.conf"  >/dev/null 2>&1
+                    ;;
+             esac
+
+             # Merge server.conf with template
+             ssh -q $node "cd ${SPLUNK_LOCAL} && cat server.conf /tmp/indexer.template >> server.conf" >/dev/null 2>&1
+
+             echo;echo "Restarting splunk on $node"
+             ssh -q $node "systemctl stop Splunkd;sleep 1;systemctl start Splunkd" 2>/dev/null
+          else
+             echo "$node is already configured with $site and $mode"
+          fi
+        done 
+        echo
+        ;;
+   S|s )
+        echo -n "Enter master node name (some_loc14-010472domain1)? "
+        read master
+        echo -n "Enter Search head name separated by a space? "
+        read search_heads
+        echo -n "Enter Cluster Security Key (prodcluster_4-loc44): "
+        read secret_key
+
+        for sh in ${search_heads}
+        do
+           # Check if single or multi site
+           # If mode, set site# 
+           # Is it a standalone sh or sh clustering?
+           site=`ssh -q $sh "cd $SPLUNK_LOCAL;grep '^site' server.conf" 2>/dev/null`
+           multisite=`ssh -q $sh "cd $SPLUNK_LOCAL;grep '^multisite' server.conf" 2>/dev/null`
+
+           if [[ -z $site ]]
+           then
+              if [[ -z $multisite ]]
+              then 
+                  # Set mode and site
+                  echo "Setting mode and site ${number} for $sh"
+                  #ssh $sh "su - $SVC_ACCT -c \"/opt/splunk/bin/splunk login -auth admin:${key};/opt/splunk/bin/splunk edit cluster-config -mode searchhead -site site${number} -master_uri https://${master}:8089 -secret ${secret_key}\"" >/dev/null 2>&1
+                  ssh -q $sh "su - $SVC_ACCT -c \"/opt/splunk/bin/splunk login -auth admin:${key};/opt/splunk/bin/splunk edit cluster-config -mode searchhead -site site0 -master_uri https://${master}:8089 -secret ${secret_key}\"" >/dev/null 2>&1
+                  echo "Restarting Splunk on $sh"
+                  ssh -q $sh "systemctl stop Splunkd;sleep 1;systemctl start Splunkd" 2>/dev/null
+              else
+                  echo "Setting site ${number} for $sh"
+                  ssh -q $sh "su - $SVC_ACCT -c \"/opt/splunk/bin/splunk login -auth admin:${key};/opt/splunk/bin/splunk edit cluster-master https://${master}:8089 -site site0 -secret ${secret_key}\"" >/dev/null 2>&1
+                  echo "Restarting Splunk on $sh"
+                  ssh -q $sh "systemctl stop Splunkd;sleep 1;systemctl start Splunkd" 2>/dev/null
+              fi
+           else
+              echo "Search head $sh is already setup with $site : $multisite"
+           fi 
+        done
+        ;;
+   Q|q )
+        exit
+        ;;
+     * )
+        usage
+        ;;
+
+esac
+done

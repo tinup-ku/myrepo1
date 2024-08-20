@@ -1,0 +1,65 @@
+#!/bin/bash
+#App Id: AD00006311
+#Group: App_iaas_SERVICEASSURANCESERVICES_prod
+#Env: PROD
+X_Auth_Key='1bmhwKrNhsaCrevkGD96uyajGJ5OoJ6PXfdZDj7dK6Kswy9rN1Y5ix5s0Vdv9dG6ERms60fk3G8jBMpQVJfw2CNW2NnOX4IYbiNHF6HWxmaAqcJudymydb7Yb0fBBfGR'
+X_Auth_Token='gXZHf9SYXoQYNllXs62VgmNf97nMtD6JB6rQfkOcIFaw0wtsCwoSTb82iwOMaVwL1XCghrs06Dw69ZzMwXFp9NsskheucLgeITu0kX0qAwxKw6x23csdZUFkcUPoF5Cn'
+
+#App Id: AD00101503
+#Group: app_iaas_splunkindexer_prod
+#Env: PROD
+#X_Auth_Key='oAh0tX9kg4aOlCFFNCxxcrowiefv25nrFFs8DBtTGDI2goH40eBcG0JYfZti4RJJxcSaOl3uZMwgaelbtXo9X77c6BvbseUZrMaf8eK80hpavKlYIK7GSfTZRoajD4j4'
+#X_Auth_Token='Rtk0H49ImySRjeQ1ZYIReBQ5Z0oC5IHXc1YU67CsGvkZKb1J9JAnkrskrRXxAEvMFtHMBjfhPAgzLiiU1SimjKGLCEjciOYYiGKUZ0bOAsolKGfMzy8TiPEUtY7MN6K5'
+
+#App Id: AD00101503
+#Group: app_iaas_splunk_prod
+#Env: PROD
+#X_Auth_Key='9k73wlxzBf1bZdDmryHlTU6Br7RilEuvYByvX54yk6KjknGLVn6PidqJkh1GVwbU8Jp5PtE9AotUL9GHxNxP0XyleA1a6c4eWtkLXYVxnps9z9Q6WnWXlviz6jKdwOst'
+#X_Auth_Token='iMfgLaN8Agh9q8gmwdkRIDrOWc2t0uWjhbz2mnbWEs64Bmr7ALZior7lD9OEELXVWxXjU8fyBmCcJ3kjPkCdLKzpTo3y91t6yrpsAF1b1EoKHJ4x4GLPqkekIiSRjmXR'
+
+#App Id: AD00101503
+#Group: App_iaas_SERVICEASSURANCESERVICES_prod
+#Env: PROD
+#X_Auth_Key='hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8'
+#X_Auth_Token='aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij'
+
+
+check_job_status ()
+{
+  curl --location --request \
+       GET "https://cmaapidomain1/salt/job_status/$1" \
+           --header "X-Auth-Key: ${X_Auth_Key}" \
+           --header "X-Auth-Token: ${X_Auth_Token}"
+}
+
+show_job_output ()
+{
+  {
+    curl --location --request \
+         GET "https://cmaapidomain1/salt/jobs/$1" \
+             --header "X-Auth-Key: ${X_Auth_Key}" \
+             --header "X-Auth-Token: ${X_Auth_Token}" 
+#  } | sed 's/\\\//\//g' | awk 'BEGIN{RS="|"}{print}' 
+  } | jq
+}
+
+##########
+# M A I N
+##########
+{
+# echo
+  {
+    check_job_status $1
+  } 2>/dev/null 
+  echo
+  echo -n "Hit ENTER to continue..."
+  read me
+  echo
+  {
+    check_salt_jid_status $1
+    show_job_output $1
+  } 2>/dev/null
+} | tee /tmp/`basename $0`.OUT
+echo
+ echo "Output: /tmp/`basename $0`.OUT"
+

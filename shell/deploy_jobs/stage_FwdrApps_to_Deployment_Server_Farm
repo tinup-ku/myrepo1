@@ -1,0 +1,716 @@
+#!/bin/bash
+# MyIT 2885755,2887017 on howto delete/cancel submitted jobs 4/9/2024
+################################################################################
+# https://jiradomain1/browse/TOS-20023
+# https://jiradomain1/browse/SED-52
+# Splunk PROD Deployment Servers Farm Build Out
+# This script interacts with https://cmaportaldomain1, apply 
+# via salt state.apply the salt state file, 
+# app_iaas_serviceassuranceservices_prod/AD00006311_splunk_core/salt/states/deploy_fwdapps.sls
+# https://cmaportaldomain1/ajax/get_file/YXBwX2lhYXNfc2VydmljZWFzc3VyYW5jZXNlcnZpY2VzX3Byb2QvQUQwMDAwNjMxMV9zcGx1bmtfY29yZS9zYWx0L3N0YXRlcy9kZXBsb3lfZndkYXBwcy5zbHM=
+#
+# SALT State and Configuration Location in Bitbucket:
+# https://bitbucketdomain1/projects/AD00203364/repos/tos_splunk_core/browse/salt/states/deploy_fwdapps.sls
+# https://bitbucketdomain1/projects/AD00203364/repos/tos_splunk_core/browse/salt/states
+# https://bitbucketdomain1/projects/AD00203364/repos/tos_splunk_core/browse/salt/data/locations.jinja
+#
+# update_scApps (From bitbucket to ${DS}:${SPLUNK_ETC}/apps/${FwdrApp_pointer})
+# update_fwdApps (From bitbucket to ${DS}:${SPLUNK_ETC}/forwarder-apps/${FwdrApp})
+# update_perms_scApps
+# update_owner_scApps
+# update_perms_fwdApps
+# update_owner_fwdApps"
+#
+# Tasks perform in order 
+# 1. update_scApps, push new/updated from Bitbucket to Deployment Server's ${SPLUNK_ETC}/shcluster/apps
+#    - https://bitbucketdomain1/projects/AD00203364/repos/tos_splunk_apps/browse/prod/forward/apps
+#    to
+#    - Splunk DEV|QA|PROD Deployment_Server's ${SPLUNK_ETC}/shcluster/apps
+# 
+# 2. update_fwdApps, push new/updated Splunk Search Head core from
+#    - https://bitbucketdomain1/scm/ad00203364/tos_splunk_core.git
+#    to 
+#    - DEV|QA|PROD [cud1-008622|cud2-008139]:/opt/splunk/etc/shcluster/apps
+#
+# 3. update_perms, recursively change /opt/splunk/etc/shcluster/apps 
+#    files/directories permission to 766 (rwxrw-rw-)
+#
+# 4. update_owner, recursively change UID:GID /opt/splunk/etc/shcluster/apps 
+#    ownership to svc_act2:unx_60231_splunk_admin_dev
+#
+# Deployment Servers:
+# DEV: cud1-008622
+# QA : cud2-008139
+# PROD:
+#   . Stand Alone:
+#     - PDC1: ser10973some_loc
+#     - PDC4: some_loc14-005391
+#   
+#   . DS Server Farm
+#     - PDC1: some_loc11-012458,some_loc11-012465
+#     - PDC3: some_loc12-011215,some_loc12-011224
+#     - DC4 : some_loc14-011621,some_loc14-011648
+#     - DC7 : some_loc17-006076,some_loc17-006078
+#
+# OUTPUTS:
+# . /var/tmp/LOG/FWDAPP/$0_${target}.${date_}.log
+# . Salt job id status for each salt ID, '"result":${status}'
+#   where
+#   ${status} is "true" or otherwise 
+#   will be reported, via, email 
+#   Subject: "`uname -n`: `basename $0` Salt job result"
+#   to ${users_list}
+#
+# . From CMA Portal
+# 1. Login to https://cmaportaldomain1/ as ad.first.last 
+# 2. Under Drop down, All Applications, choose AD00006311
+# 3. In Minion Id, search for Deployment servers listed above.
+# 4. In Actions Dropdown, click on Apply State
+# 5. Under "Choose Group Repository:", click on
+#    App_iaas_SERVICEASSURANCESERVICES_dev_AD00006311
+# 6. Under "Choose file:", click on
+#    app_iaas_serviceassuranceservices_dev/AD00006311_splunk_core/salt/states/deploy_shapps.sls
+#    Note, click on "View Source" to see state file .sls content
+#    https://cmaportaldomain1/ajax/get_file/YXBwX2lhYXNfc2VydmljZWFzc3VyYW5jZXNlcnZpY2VzX3Byb2QvQUQwMDAwNjMxMV9zcGx1bmtfY29yZS9zYWx0L3N0YXRlcy9kZXBsb3lfc2hhcHBzLnNscw==
+# 7. To test run, put a check mark on "Run as test/dry-run, no actual changes are made."
+#    then click on "Apply State"
+# 8. Otherwise, click on "Apply State". Job id will be shown below as an example.
+#    Job executed with Job Id: 20211021204146060914
+# Reference:
+# https://confluencedomain1/display/SDIP/SALT+MANAGED+PLATFORM#SALTMANAGEDPLATFORM-CMAAPIDocumentation
+#
+# SH Cluster Deployer salt minion grains settings:
+# 
+# Grain           Value
+# --------------- -----------------
+# app_name        splunk
+# environment     [dev|qa|prod]
+# splunk_env      [dev|qa|prod]
+# splunk_function deployment_server
+# splunk_group    core
+# splunk_role     admin
+# 
+# CMA Settings:
+#----------------------------------------------
+# https://cmaportaldomain1/api
+# CMA App Id: AD00006311
+#
+# Environments:
+# - DEV|QA
+# Group: app_iaas_serviceassuranceservices_dev
+# X_Auth_Key="Y3gJlZ661VTF1a9j6MHC0hQsgeReSkHk7ulf3RUKPIVYIybiJXixbjngtGSLb0bgOMrmFPG0OngD40sIizYRbKxmgWFOo4WGlC7R1XKdRhZy3xHV7eUxzltv9l4ibp0d"
+# X_Auth_Token="FaPQ1OopRJDsuseMNKaWlakwtu3ktfz9qpZreoR57uyCWNpKyzGTJ1pdwtxZJ699w9BKxsQEXohTbGEKfkDZm3cSwJSfQ1pma07HtYmqnDkzjYjzjWyF0KxwtqMkrcHB"
+# state_file="app_iaas_serviceassuranceservices_dev.AD00006311_splunk_core.salt.states.deploy_fwdapps"
+#
+# - PROD
+# . Single Deployment Servers: ser10973some_loc,some_loc14-005391
+#   X_Auth_Key='hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8'
+#   X_Auth_Token='aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij'
+# . Multi Deployment Servers Farm:
+#   X_Auth_Key='1bmhwKrNhsaCrevkGD96uyajGJ5OoJ6PXfdZDj7dK6Kswy9rN1Y5ix5s0Vdv9dG6ERms60fk3G8jBMpQVJfw2CNW2NnOX4IYbiNHF6HWxmaAqcJudymydb7Yb0fBBfGR'
+#   X_Auth_Token='gXZHf9SYXoQYNllXs62VgmNf97nMtD6JB6rQfkOcIFaw0wtsCwoSTb82iwOMaVwL1XCghrs06Dw69ZzMwXFp9NsskheucLgeITu0kX0qAwxKw6x23csdZUFkcUPoF5Cn
+#
+# state_file='app_iaas_serviceassuranceservices_prod.AD00006311_splunk_core.salt.states.deploy_fwdapps'
+#----------------------------------------------
+# NOTE: To kill long RUNNING job,
+# https://confluencedomain1/display/SDIP/SALT+MANAGED+PLATFORM#SALTMANAGEDPLATFORM-POST/salt/kill_running_job
+################################################################################
+# Written by user1 | Team
+#
+module_functions="update_scApps
+update_fwdApps
+update_perms_scApps
+update_owner_scApps
+update_perms_fwdApps
+update_owner_fwdApps"
+date_=$(date '+%a%H%M_%m%d%Y')
+LOG=/var/tmp/LOG/FWDAPP
+#users_list="user1@mycorp.com,user2@mycorp.com,user3@mycorp.com,user4@mycorp.com"
+users_list="grp2@mycorp.com"
+bold_yellow="\e[1m\e[33m"
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+reset_color="\e[0m"
+
+trap cleanup_LCK_file 1 2 3 6
+
+check_salt_jid_status ()
+{
+  echo "job_id=$1" 
+
+  # Checking various salt jid status
+  # Output examples:
+  # {"state": "running", "timer": 50, "minions": {"cud1-008622": "running"}}
+  # {"state": "complete", "timer": 62, "minions": {"cud1-008622": "complete"}}
+  # {"state": "complete", "timer": 3612, "minions": {"cud1-008622": "no data"}}
+  while :
+  do
+    status=`{
+              curl --location --request \
+                   GET "https://cmaapidomain1/salt/job_status/$1" \
+                   --header "X-Auth-Key: ${X_Auth_Key}" \
+                   --header "X-Auth-Token: ${X_Auth_Token}" 
+    } 2>/dev/null`
+
+    echo
+    echo $status|grep 'error":' >/dev/null 2>&1
+    [[ "$?" = "0" ]] && {
+      echo "ERROR: $status"
+      echo "Abort."
+      cleanup_LCK_file
+      exit 1
+    }
+    #echo status=$status
+    echo $status|grep "running" >/dev/null 2>&1
+    if [[ "$?" = "0" ]]
+    then
+       #echo "jid $1 is still running."
+       echo -n "Let's wait for 60 seconds... "
+       rotate_char 
+    else
+       echo
+       # {"state": "complete", "timer": 11396, "minions": {"cud1-008622": "complete"}}
+       # {"state": "running", "timer": 204, "batchjob": false, "minions": {"some_loc12-011215": "running"}}
+       # {"state": "complete", "timer": 671, "batchjob": false, "minions": {"some_loc11-012458": "complete"}}
+       # echo "Checking jid $1 to make sure ${target} is in \"complete\" state"
+       echo "$status"|awk 'BEGIN{RS="{"}{print}'|sed '/^$/d'|awk 'END{print}' \
+       | grep ${target} |grep '"complete"}}' >/dev/null
+       jid_status=$?
+
+       if [[ "${jid_status}" != "0" ]]
+       then
+         echo
+         echo "$status"
+         echo "Waiting for jid $1 to complete for another 2 minutes."
+         sleep 2m
+       else 
+         #echo "jid $1 Completed"
+         #echo "$status"
+         break
+       fi
+    fi
+  done
+}
+
+show_jid_status ()
+{
+    status=`{
+              curl --location --request \
+                   GET "https://cmaapidomain1/salt/job_status/$1" \
+                   --header "X-Auth-Key: ${X_Auth_Key}" \
+                   --header "X-Auth-Token: ${X_Auth_Token}"
+    } 2>/dev/null`
+
+    echo $status|grep 'error":' >/dev/null 2>&1
+    [[ "$?" = "0" ]] && {
+      echo " ERROR: $status"
+      #echo "Abort."
+      #exit 1
+    }
+    #echo status=$status
+    echo $status|grep "running" >/dev/null 2>&1
+    if [[ "$?" = "0" ]]
+    then
+       echo " RUNNING"
+    else
+       echo "$status"|awk 'BEGIN{RS="{"}{print}'|sed '/^$/d'|awk 'END{print}' \
+       | grep ${target} |grep '"complete"}}' >/dev/null
+       jid_status=$?
+       [[ "${jid_status}" != "0" ]] && echo " COMPLETED"
+    fi
+}
+
+show_jid_status_ ()
+{
+    status=`{
+              curl --location --request \
+                   GET "https://cmaapidomain1/salt/job_status/$1" \
+                   --header "X-Auth-Key: ${X_Auth_Key}" \
+                   --header "X-Auth-Token: ${X_Auth_Token}"
+    } 2>/dev/null`
+
+    echo $status|grep 'state": "complete' >/dev/null
+    if [[ "$?" = "0" ]]
+    then
+       echo " COMPLETED"
+    else
+       echo -e " ${bold_yellow}RUNNING${reset_color}"
+    fi
+}
+
+run_test_job ()
+{
+  get_Auth_Key_Token
+  # Start test run to get salt jid
+  # Example output: {"return": [{"jid": "20211020172204541253", "minions": []}]}
+  echo -e "Running TEST from Bitbucket to ${env__} Deployment Server, ${bold_yellow}${target}${reset_color}."
+  jid_test=`{
+         curl --location --request POST 'https://cmaapidomain1/salt/apply_state' \
+              --header "X-Auth-Key: ${X_Auth_Key}" \
+              --header "X-Auth-Token: ${X_Auth_Token}" \
+              --header 'Content-Type: application/json' \
+              --data '[{
+                         "target": "'"${target}"'",
+                         "tgt_type": "list",
+                         "file": "'"${state_file}"'",
+                         "test": "true"
+                       }]'
+  } 2>/dev/null| awk '{print $3}'| sed -e 's/"//g' -e 's/,//g'` 
+  export job_id=${jid_test}
+  exec "$@"
+  #echo job_id=$job_id
+}
+
+run_actual_job ()
+{
+  get_Auth_Key_Token
+  # Insert run salt run job below
+  jid=`{
+         curl --location --request POST 'https://cmaapidomain1/salt/apply_state' \
+              --header "X-Auth-Key: ${X_Auth_Key}" \
+              --header "X-Auth-Token: ${X_Auth_Token}" \
+              --header 'Content-Type: application/json' \
+              --data '[{
+                         "target": "'"${target}"'",
+                         "tgt_type": "list",
+                         "file": "'"${state_file}"'" 
+                       }]'
+  } 2>/dev/null| awk '{print $3}'| sed -e 's/"//g' -e 's/,//g'`
+  # 2>/dev/null| awk '{print $3}'| sed -e 's/"//g;'s/,//g'`
+  export job_id=${jid}
+  exec "$@"
+  #echo job_id=$job_id
+}
+
+rotate_char() {
+   chars=( '←' '↑' '→' '↓' )
+   for sec in {1..60}
+   do
+     echo -ne "${green}${chars[i++ % ${#chars[@]}]}"
+     sleep 1
+     echo -ne "\b${reset_color}"
+   done
+}
+
+kill_jid ()
+{
+  get_Auth_Key_Token
+  curl --location --request POST 'https://cmaapidomain1/salt/kill_running_job' \
+       --header "X-Auth-Key: ${X_Auth_Key}" \
+       --header "X-Auth-Token: ${X_Auth_Token}" \
+       --header 'Content-Type: application/json' \
+       --data '[{
+                  "target": "'"${target}"'",
+                  "jid": "'"${jid}"'",
+                  "tgt_type": "list"
+               }]'
+}
+
+check_job_status ()
+{
+  curl --location --request \
+       GET "https://cmaapidomain1/salt/job_status/$1" \
+           --header "X-Auth-Key: ${X_Auth_Key}" \
+           --header "X-Auth-Token: ${X_Auth_Token}"
+}
+
+show_job_output ()
+{
+  {
+    curl --location --request \
+         GET "https://cmaapidomain1/salt/jobs/$1" \
+             --header "X-Auth-Key: ${X_Auth_Key}" \
+             --header "X-Auth-Token: ${X_Auth_Token}"
+  #} | sed 's/\\\//\//g' | awk 'BEGIN{RS="|"}{print}'
+  } | jq
+}
+
+usage ()
+{
+  cat<<END
+
+Usage: $0 [[ -[E|e] [D|Q|P] -[U|u] [AD_first.last]  ]], or
+       $0 [[ -[U|u] [AD_first.last] [[ -[E|e] [D|Q|P] ]]
+
+Where: -E|-e  Deployment server environment (DEV|QA|PROD)
+       -U|-u  Active Directory username first.last
+
+END
+  cleanup_LCK_file
+  exit 1
+}
+
+get_Auth_Key_Token ()
+{
+  case ${env_} in
+       D|d|Q|q )
+                 X_Auth_Key="Y3gJlZ661VTF1a9j6MHC0hQsgeReSkHk7ulf3RUKPIVYIybiJXixbjngtGSLb0bgOMrmFPG0OngD40sIizYRbKxmgWFOo4WGlC7R1XKdRhZy3xHV7eUxzltv9l4ibp0d"
+                 X_Auth_Token="FaPQ1OopRJDsuseMNKaWlakwtu3ktfz9qpZreoR57uyCWNpKyzGTJ1pdwtxZJ699w9BKxsQEXohTbGEKfkDZm3cSwJSfQ1pma07HtYmqnDkzjYjzjWyF0KxwtqMkrcHB"
+                 state_file="app_iaas_serviceassuranceservices_dev.AD00006311_splunk_core.salt.states.deploy_fwdapps"
+                 ;;
+           P|p )
+                 case ${target} in
+                      ser10973some_loc | \
+                      some_loc14-005391 )
+                                    X_Auth_Key='hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8'
+                                    X_Auth_Token='aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij'
+                                    ;;
+                      some_loc11-012458 | \
+                      some_loc12-011215 | \
+                      some_loc11-012465 | \
+                      some_loc12-011224 | \
+                      some_loc17-006076 | \
+                      some_loc17-006078 | \
+                      some_loc14-011621 | \
+                      some_loc14-011648 )
+                                    X_Auth_Key='1bmhwKrNhsaCrevkGD96uyajGJ5OoJ6PXfdZDj7dK6Kswy9rN1Y5ix5s0Vdv9dG6ERms60fk3G8jBMpQVJfw2CNW2NnOX4IYbiNHF6HWxmaAqcJudymydb7Yb0fBBfGR'
+                                    X_Auth_Token='gXZHf9SYXoQYNllXs62VgmNf97nMtD6JB6rQfkOcIFaw0wtsCwoSTb82iwOMaVwL1XCghrs06Dw69ZzMwXFp9NsskheucLgeITu0kX0qAwxKw6x23csdZUFkcUPoF5Cn'
+                                    ;;
+                 esac
+                 state_file='app_iaas_serviceassuranceservices_prod.AD00006311_splunk_core.salt.states.deploy_fwdapps'
+  esac
+}
+
+print_dots ()
+{
+  case $1 in
+   1 ) dot='.';;
+   2 ) dot='..';;
+   3 ) dot='...';;
+   4 ) dot='....';;
+   5 ) dot='.....';;
+  esac
+}
+
+check_LCK_file ()
+{
+  if [[ -f /tmp/`basename $0`.LCK ]]
+  then
+    echo "`basename $0` is running under PID $(head -1 /tmp/`basename $0.LCK`) . Abort"
+    exit
+  else
+    # Create LCK with $0's PID
+    echo "$BASHPID" > /tmp/`basename $0`.LCK 
+  fi
+}
+
+cleanup_LCK_file ()
+{
+  echo
+  echo "Cleaning up LCK file: /tmp/`basename $0`.LCK"
+  rm -rf /tmp/`basename $0`.LCK
+  exit
+}
+
+
+
+##########
+# M A I N
+##########
+{
+clear
+check_LCK_file
+[[ ! -d ${LOG} ]] && mkdir -p ${LOG}
+echo
+echo "Pushing Splunk Forwarder Apps from Bitbucket to Deployment Server."
+if [[ "$#" = "0" ]]
+then
+   echo -en "Is it [${bold_yellow}D${reset_color}]EV, [${bold_yellow}Q${reset_color}]A, or [${bold_yellow}P${reset_color}]ROD? "
+   read env_
+   case ${env_} in
+        D|d|Q|q|P|p )
+                      ;;
+                  * )
+                      echo -en "Enter ${bold_yellow}D|d${reset_color}, ${bold_yellow}Q|q${reset_color}, or ${bold_yellow}P|p${reset_color}. Try again." 
+                      echo
+                      cleanup_LCK_file
+                      exit
+                      ;;
+   esac
+
+   echo -en "Enter AD ${bold_yellow}first.last${reset_color}? "
+   read ad_uid
+else
+   while [[ $# -le 4 ]]
+   do
+      case $1 in
+                 -E|-e ) env_=$2
+                         ;;
+                 -U|-u ) ad_uid=$2
+                         ;;
+      esac
+
+      case $3 in
+                 -E|-e ) env_=$4
+                         ;;
+                 -U|-u ) ad_uid=$4
+                         ;;
+                      *)
+                         break
+      esac
+      shift
+      interactive_flag=false
+   done
+   [[ -z ${env_} ]] || [[ -z ${ad_uid} ]] && usage
+fi
+. /.splunk_|grep -Fx ${ad_uid} >/dev/null 2>&1
+[[ "$?" != "0" ]] && echo "ERROR: ${ad_uid} is incorrect. Abort" && cleanup_LCK_file && exit
+
+case ${env_} in
+     D|d )
+           targets=ser12683pdv
+           env__=DEV
+           ;;
+     Q|q )
+           targets=ser12684pdv
+           env__=QA
+           ;;
+     P|p )
+#ser10973some_loc
+#some_loc14-005391
+           targets="
+                    some_loc14-005391
+                    some_loc11-012458 
+                    some_loc12-011215 
+                    some_loc11-012465 
+                    some_loc12-011224 
+                    some_loc17-006076 
+                    some_loc17-006078 
+                    some_loc14-011621 
+                    some_loc14-011648"
+           {
+             for target_ in ${targets}
+             do
+               echo ${target_}
+             done
+           } > /tmp/DS_Farm.list
+           env__=PROD
+           ;;
+esac
+
+echo 
+echo "BEGIN: `date`"
+echo "Environment: ${env__}"
+echo "Username: ${ad_uid}"
+echo
+echo "Below are ${env__} Deployment Servers:"
+echo -e "${bold_yellow}${targets}${reset_color}"
+echo
+
+# Option to run ALL or specific nodes.
+[[ "${interactive_flag}" != "false" ]] && {
+   [[ "${env__}" = "PROD" ]] && {
+      echo -en "Update ${bold_yellow}A${reset_color})ll or ${bold_yellow}P${reset_color})articular node? "
+      read ans
+      case ${ans} in
+              A|a ) targets=$targets
+                    ;;
+              P|p )
+                    echo -n "Enter node name(s) separated by a space? "
+                    read ds_name
+                    # Is input correct?
+                    targets=""
+                    for ds_ in ${ds_name} 
+                    do
+                      grep "${ds_}" /tmp/DS_Farm.list >/dev/null 2>&1
+                      if [[ "$?" = "0" ]]
+                      then
+                          targets="${targets} ${ds_}"
+                      else
+                         echo "${ds_name} is NOT a Deployment Server. Abort"
+                         cleanup_LCK_file
+                         exit 1
+                      fi
+                    done
+                    targets=${ds_name}
+                    ;;
+                * )
+                    echo "Wrong input. Try again."
+                    cleanup_LCK_file
+                    exit
+                    ;;
+      esac
+      echo
+      echo -e "${ad_uid} elected option ${bold_yellow}${ans}${reset_color} on servers below:"
+      echo
+      echo  -e "${bold_yellow}${targets}${reset_color}"
+      echo
+  }
+}
+echo -e "${bold_yellow}1.${reset_color} Pushing new/updated apps from Bitbucket to ${env__} Deployment Servers:"
+# 1. Run job on all targets immediately
+for target in ${targets}
+do
+    echo "START: `date`: $target"
+    #run_test_job
+    #check_salt_jid_status ${jid_test}
+    run_actual_job
+    echo "$target ${jid}" >> /tmp/DS_FARM_jid.${date_}
+done
+
+# Wait for job results
+echo
+echo "Below are salt job id submitted on each Deployment server:"
+echo "/tmp/DS_FARM_jid.${date_}"
+echo "---------------------------------"
+cat /tmp/DS_FARM_jid.${date_}
+echo "---------------------------------"
+echo
+echo
+echo "Let's wait for 5 mins to allow jobs to complete....."
+for min in {1..5}
+do
+  print_dots $min
+  echo -n "`date` $min $dot"
+  rotate_char
+  echo
+ done
+echo
+
+# 2. Checking job submitted in /tmp/DS_FARM_jid.${date_}
+echo -e "${bold_yellow}2.${reset_color} Checking jobs submitted status..."
+echo
+
+count=0
+while :
+do
+   {
+     for jid_ in `awk '{print $NF}' /tmp/DS_FARM_jid.${date_}`
+     do
+       echo -n "`grep ${jid_} /tmp/DS_FARM_jid.${date_}`"
+       show_jid_status_ ${jid_}
+       #sleep 1s
+     done
+   } | tee /tmp/DS_FARM_jid.${date_}.OUT
+   sleep 1s
+   echo
+   grep 'RUNNING' /tmp/DS_FARM_jid.${date_}.OUT >/dev/null
+   if [[ "$?" = "0" ]]
+   then
+       date
+       echo -n "Let's wait for another 3 mins... "
+       for min in {1..3}
+       do
+        rotate_char
+       done
+       echo
+       date
+       count=$((count+1))
+       echo
+   else
+       echo "`date`: jobs submitted COMPLETED."
+       echo
+       break
+   fi
+   #echo count=$count 
+   # if job's still RUNNING > 30mins, exit
+   [[ $count -gt 10 ]] && {
+      echo "jobs are still running:"
+      cat /tmp/DS_FARM_jid.${date_}.OUT
+      echo
+      echo -en "Terminate current RUNNING jobs (${green}Y${reset_color}|${red}N${reset_color})? "
+      read ans_
+      echo
+      case ${ans_} in
+           Y|y )
+                grep 'RUNNING' /tmp/DS_FARM_jid.${date_}.OUT|while read line
+                do 
+                  target=`echo $line|awk '{print $1}'`
+                  jid=`echo $line|awk '{print $2}'`
+                  echo "Terminating RUNNING job, $jid, on $target"
+                  kill_jid >/dev/null 2>&1
+                done
+                echo
+
+                # Wait for 10s then show jobs status
+                echo -n "Verifying jobs terminated."
+                for dot in {1..10}
+                do
+                  echo -n "."
+                  sleep 1s
+                done
+                echo
+                grep 'RUNNING' /tmp/DS_FARM_jid.${date_}.OUT|while read line
+                do
+                  jid=`echo $line|awk '{print $2}'`
+                  check_job_status $jid  2>/dev/null
+                done
+                echo
+
+                echo "Please notify Splunk Platform Support to investigate if needed."
+                ;;
+             * )
+                echo "RUNNING job(s) below can be terminated via \`kill_salt_job\` at the command line prompt"
+                echo
+                grep "RUNNING" /tmp/DS_FARM_jid.${date_}.OUT
+                echo
+                ;;
+      esac
+      cleanup_LCK_file
+      echo
+      break
+   }
+done 
+
+echo -e "${bold_yellow}3.${reset_color} Generating log for each deployment server's job submitted"
+for target in ${targets}
+do
+  grep ${target} /tmp/DS_FARM_jid.${date_}
+  jid=`grep ${target} /tmp/DS_FARM_jid.${date_}|awk '{print $NF}'` 
+  {
+    echo "Environment: ${env__}"
+    echo "Username: ${ad_uid}"
+    echo job_id=$jid
+    { 
+      curl --location --request GET "https://cmaapidomain1/salt/jobs/${jid}" \
+           --header "X-Auth-Key: ${X_Auth_Key}" \
+           --header "X-Auth-Token: ${X_Auth_Token}"
+    } | jq
+  } 2>/dev/null >> ${LOG}/`basename $0`_${target}.${date_}.log
+
+  LOG_=${LOG}/`basename $0`_${target}.${date_}.log
+  # Checking result from $LOG_
+  # Obtain salt job id
+  job_id=${jid}
+  {
+    echo "Environment: ${env__}"
+    echo "Username: ${ad_uid}"
+    echo job_id=$job_id
+
+    for salt_func in ${module_functions}
+    do
+      echo "${salt_func}:"
+      salt_f=`echo "sed -n '/-${salt_func}_/,/\"result\":/p'"`
+      eval "${salt_f} ${LOG_}|tail -1"
+    done
+  } | mailx -s "`uname -n`: ${env__} Deployment Server ${target}:`basename $0` Salt job id result, ${job_id}." ${users_list}
+done
+
+echo
+echo "END: `date`"
+echo
+
+case ${env__} in
+     PROD )
+           echo -e "${bold_yellow}IMPORTANT: splunk MUST be restarted on all DS servers.${reset_color}"
+           cat <<END
+
+-----------
+Next steps:
+-----------
+1. Login to Splunk Control Server, ser10966some_loc. As root,
+2. restart_splunk_DS_Farm
+
+END
+           ;;
+       QA | DEV )
+           echo
+           echo "splunk MUST be restarted on ${targets}"
+           echo "Remote login to ${targets}. As root,"
+           echo "stop_splunk"
+           echo "start_splunk"
+           ;;
+esac
+
+cleanup_LCK_file >/dev/null
+} | tee ${LOG}/`basename $0`_DS_Farm.${date_}.log

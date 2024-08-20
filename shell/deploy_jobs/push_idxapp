@@ -1,0 +1,375 @@
+#!/bin/bash
+##############################################################
+## This script applies the salt state for indexer apps to Cluster masters:
+##  Salt state:
+##    https://bitbucketdomain1/projects/AD00203364/repos/tos_splunk_core/browse/salt/states/deploy_idxapps.sls
+##      update_apps : sync the content from bitbucket to the CM dir - /opt/splunk/etc/master-apps
+##      update_perms: update the files permissions in dir - /opt/splunk/etc/master-apps
+##      update_owner: update the files owner in dir - /opt/splunk/etc/master-apps
+##  Updates:
+##   08/24/22:Adding new cluster master for prod CD1_A 
+##   12/28/22:Adding new cluster master for prod CD1_B CD1_C CD1_D
+##   06/14/24:Use credential file same as other push scripts
+##############################################################
+## Written by: user3@mycorp.com
+## Contributors: user2@mycorp.com, user1@mycorp.com, user4@mycorp.com
+##############################################################
+
+    this_script=`basename $0`
+    mydate=`date +%Y%m%d_%H.%M.%S`
+    logdir="/var/tmp/LOG/IDXAPP"
+    logfile=${logdir}/${this_script}.${mydate}.log
+    users_list="grp2@mycorp.com"
+    #users_list="user2@mycorp.com,user1@mycorp.com,user4@mycorp.com,user3@mycorp.com"
+    #users_list="user3@mycorp.com"
+    tmp_log1=${logdir}/tmp_log_${this_script}_1_${mydate}
+    echo -n > $logfile #; echo -n > $tmp_log1
+
+    Red='\033[0;31m'          # Red
+    White='\033[0;37m'        # White
+    bold_yellow="\e[1m\e[33m"
+    reset_color="\e[0m"
+
+
+    display_help() {
+        echo "Usage: $0 -e <environment> -u <username>" 1>&2;
+        echo "Example:"
+        echo "$0 -e <dev|qa|prod> -u <username>" 1>&2;
+        echo -e "$0 -e dev -u first.last \n"
+        exit 1
+    }
+
+    args_parse () {
+        while getopts ":e:u:" o; do
+           case "${o}" in
+              e)
+                  e=${OPTARG}
+                  ;;
+              u)
+                  u=${OPTARG}
+                  ;;
+              *)
+                  display_help
+                  ;;
+           esac
+        done
+        #shift $((OPTIND-1))
+
+        if [ -z "${e}" ] || [ -z "${u}" ]; then
+           display_help
+        else
+          user_=${u}
+          env_=${e}
+          #echo "$user_ $env_"
+        fi
+
+    }
+
+
+    set_mode () {
+        # salt apply mode for testing : "apply_state_tst" or "apply_state" to enforce
+        apply_="apply_state"
+        #apply_="apply_state_tst"
+
+        #mode="${@: -1}"
+        #if [[ "$mode"="test" ]]
+        #  then
+        #  apply_="apply_state_tst"
+        #elif [[ "$mode"="enforce" ]]
+        #  then
+        #  apply_e="apply_state"
+        #else
+        #  echo "Apply mode is invalid"
+        #  exit 1
+        #fi
+
+    }
+
+   user_parse() {
+        if [ -z  "${user_}" ]; then
+           #read -p "User-name? your first.last: " user_ 
+           echo -en "Enter AD ${bold_yellow}first.last${reset_color}? "
+           read user_ 
+        fi
+
+        if [ -z  "${user_}" ]; then
+           echo "Invalid user: $user_ " >> $logfile 
+           echo -e "${Red} ERROR: No User name given: $user_ ${White}" 
+           exit 1
+        fi
+
+        #if [[ -r /.idxapp_usr ]]
+        if [[ -r /.splunk_cred ]]
+            then
+            user_cred="/.splunk_cred"
+        else
+           echo "Can't validate users"
+            #user_cred="./.idxapp_usr"
+        fi
+        outu=`eval gpg --batch --passphrase --option -d $user_cred 2>&1 | grep $user_ | head -1 | cut -d":" -f2 | sed "s/\///g" `
+        if [[ ! -z $outu ]]
+            then
+            if [[ "$user_" != "$outu" ]]
+               then
+               echo "Invalid user: $user_" >> $logfile
+               echo -e "${Red} ERROR: Invalid user: $user_ ${White}" 
+               exit 1
+            fi
+        else
+           echo "Invalid user: $user_" >> $logfile
+           echo -e "${Red} ERROR: Invalid user: $user_ ${White}" 
+           exit 1
+        fi
+   }
+
+    envs_parse () {
+        if [ -z  "${env_}" ]; then
+           echo ""
+           #read -p "Eenvironment? qa|dev|prod: " env_ 
+           echo -en "Is it [${bold_yellow}D${reset_color}]EV, or [${bold_yellow}Q${reset_color}]A or [${bold_yellow}P${reset_color}]ROD? "
+           read env1
+        fi
+
+        if [ -z  "${env1}" ]; then
+           echo "Invalid environment: pls enter environment for qa, dev or prod:" >> $logfile 
+           echo -e "${Red}  ERROR: Invalid environment: pls enter environment name like qa, dev or prod: ${White}" 
+           exit 1
+        fi
+
+        case ${env1} in
+             D|d )
+                  env_=dev
+                  ;;
+             Q|q )
+                   env_=qa
+                   ;;
+             P|p )
+                   env_=prod
+                   ;;
+         esac
+
+
+        case ${env_} in
+           dev )
+                cm_list=( "cud1-008863" )
+                auth_key="Y3gJlZ661VTF1a9j6MHC0hQsgeReSkHk7ulf3RUKPIVYIybiJXixbjngtGSLb0bgOMrmFPG0OngD40sIizYRbKxmgWFOo4WGlC7R1XKdRhZy3xHV7eUxzltv9l4ibp0d"
+                auth_token="FaPQ1OopRJDsuseMNKaWlakwtu3ktfz9qpZreoR57uyCWNpKyzGTJ1pdwtxZJ699w9BKxsQEXohTbGEKfkDZm3cSwJSfQ1pma07HtYmqnDkzjYjzjWyF0KxwtqMkrcHB"
+                state_file="app_iaas_serviceassuranceservices_dev.AD00006311_splunk_core.salt.states.deploy_idxapps"
+                ;;
+           qa )
+                cm_list=( "cud1-012706" )
+                auth_key="Y3gJlZ661VTF1a9j6MHC0hQsgeReSkHk7ulf3RUKPIVYIybiJXixbjngtGSLb0bgOMrmFPG0OngD40sIizYRbKxmgWFOo4WGlC7R1XKdRhZy3xHV7eUxzltv9l4ibp0d"
+                auth_token="FaPQ1OopRJDsuseMNKaWlakwtu3ktfz9qpZreoR57uyCWNpKyzGTJ1pdwtxZJ699w9BKxsQEXohTbGEKfkDZm3cSwJSfQ1pma07HtYmqnDkzjYjzjWyF0KxwtqMkrcHB"
+                state_file="app_iaas_serviceassuranceservices_dev.AD00006311_splunk_core.salt.states.deploy_idxapps"
+                ;;
+           prod )
+                cm_list=( "ser10859some_loc" "some_loc14-005385" "some_loc17-005833" "some_loc14-010638" "some_loc14-010472" "some_loc17-005850" )
+                auth_key="hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8"
+                auth_token="aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij"
+                state_file="app_iaas_serviceassuranceservices_prod.AD00006311_splunk_core.salt.states.deploy_idxapps"
+                ;;
+           prod-az )
+                cm_list=( "ser10859some_loc" )
+                auth_key="hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8"
+                auth_token="aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij"
+                state_file="app_iaas_serviceassuranceservices_prod.AD00006311_splunk_core.salt.states.deploy_idxapps"
+                ;;
+           prod-tx )
+                cm_list=( "some_loc14-005385" )
+                auth_key="hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8"
+                auth_token="aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij"
+                state_file="app_iaas_serviceassuranceservices_prod.AD00006311_splunk_core.salt.states.deploy_idxapps"
+                ;;
+           *)
+               echo "Invalid environment: ${env_}" | tee -a $logfile
+               echo -e "${Red}  ERROR: Invalid environment: pls enter environment for  qa, dev or prod: ${White}" 
+               exit 1
+               ;;
+        esac
+        }
+
+
+    # update Auth keys for apm id:6311
+    auth_keys_update () {
+        cmn="$1"
+        case $cmn in
+           #6311
+           some_loc14-010638 | some_loc17-005850 )
+                auth_key="1bmhwKrNhsaCrevkGD96uyajGJ5OoJ6PXfdZDj7dK6Kswy9rN1Y5ix5s0Vdv9dG6ERms60fk3G8jBMpQVJfw2CNW2NnOX4IYbiNHF6HWxmaAqcJudymydb7Yb0fBBfGR"
+                auth_token="gXZHf9SYXoQYNllXs62VgmNf97nMtD6JB6rQfkOcIFaw0wtsCwoSTb82iwOMaVwL1XCghrs06Dw69ZzMwXFp9NsskheucLgeITu0kX0qAwxKw6x23csdZUFkcUPoF5Cn"
+            ;;
+          #1503
+          ser10859some_loc | some_loc14-005385 | some_loc17-005833 | some_loc14-010472 )
+                auth_key="hv4rhDO949rworZVqUYCFvwUr0CgVCjdED44kL5W0SIWT31u204bJr5tk2rQ8SZPXdXskVKxzMzdoqcpyfz2Ewr0aLxoYITt7KJA71pjz1v4SETMxNj250pvh5WyKUl8"
+                auth_token="aIWpnxTdHUtMezCJxdGqfDhDNe4XG0YQIUg5s9j93MWimy1UMHk1lBF8QJ6wJ4nsZDxrNQARDx905aURSfSeRxnHhte0yBsxf0Z2RATv73wdeq46GXlxvIeMcsNK4gij"
+            ;;
+          *)
+            msg="Not prod CM"
+            ;;
+        esac
+    }
+
+
+    ## check JID status
+    check_jid () {
+        job_id=$1
+        curl -s --location --request GET \
+        https://cmaapidomain1/salt/job_status/$job_id \
+        -H "X-Auth-Key: ${auth_key}" \
+        -H "X-Auth-Token: ${auth_token}"
+        }
+
+
+   check_jid_output () {
+        this_id=$1
+
+        curl -s --location --request GET \
+        https://cmaapidomain1/salt/jobs/$this_id \
+        -H "X-Auth-Key: ${auth_key}" \
+        -H "X-Auth-Token: ${auth_token}"
+        }
+
+
+    ## Apply states in test mode
+    apply_state_tst () {
+    myhost=$1
+    myout=$(curl -s --location --request POST 'https://cmaapidomain1/salt/apply_state' \
+        --header "X-Auth-Key: ${auth_key}" \
+        --header "X-Auth-Token: ${auth_token}" \
+        --header 'Content-Type: application/json' \
+        --data '[{
+        "target": "'"${myhost}"'",
+        "tgt_type": "list",
+        "file": "'"${state_file}"'",
+        "test": "true"
+        }]' )
+    echo $myout
+    }
+
+    ## Apply states & enforce changes
+    apply_state () {
+    myhost=$1
+    myout=$(curl -s --location --request POST 'https://cmaapidomain1/salt/apply_state' \
+        --header "X-Auth-Key: ${auth_key}" \
+        --header "X-Auth-Token: ${auth_token}" \
+        --header 'Content-Type: application/json' \
+        --data '[{
+        "target": "'"${myhost}"'",
+        "tgt_type": "list",
+        "file": "'"${state_file}"'"
+        }]' )
+    echo $myout
+    }
+
+    ## Apply state
+    echo ""
+    echo "Pushing Indexer Apps from Bitbucket to Cluster Master(s)"
+    if [[ ! -z "$@" ]]
+    then
+        args_parse "$@"
+    fi 
+    envs_parse
+    user_parse
+    set_mode
+
+    for master in ${cm_list[@]}; do
+    echo "==============================" 
+
+    auth_keys_update $master
+
+    echo "Deploying: $master   environment: $env_   user: $user_ "
+    echo "`date`: Deploying: $master   environment: $env_   user: $user_ " >> $logfile
+    if [[ $apply_ = "apply_state_tst" ]]
+    then
+        echo "Applying in test mode.."
+        echo "`date`: Applying in test mode.." >> $logfile
+    fi
+    
+    ### test
+    #done  ; exit 0
+
+    out1=$(${apply_} $master)
+    #echo $out1   #  apply_="test"
+    myjid=$(echo $out1 | awk '{print $3}' | sed s/,//g | sed s/\"//g)
+    #echo $myjid
+    jid_out=$(check_jid $myjid)
+    #echo $jid_out
+    echo $jid_out | grep -qi running
+    if [[ "$?" = 0 ]]; then
+        echo "Start: `date`"
+        echo "Deploying..."
+        n=0
+        result="running"
+        while [ $result = "running"  ]
+          do
+              (( n++ ))
+              echo "   Waiting 30 secs.."
+              echo "`date`: Still running JID:$myjid  ..will check again($n) a sleep" >> $logfile
+              sleep 30
+              jid_out="$(check_jid $myjid)"
+              echo $jid_out | grep -qi running
+              if [[ "$?" = 0 ]]; then
+              result="running"
+                  if [[ $n -gt 200 ]]
+                  then
+                  echo -e "${Red} Running for long time.. Exiting with error.. ${White}" 
+                  echo "`date`:Running for more than 30 minutes.. Exiting... $jid_out" >> $logfile
+                  echo "${this_script}:Running to long..$jid_out" | mailx -s "${this_script}:Running too long..." ${users_list}
+                  exit 1
+                  fi
+              else
+                  echo "`date`:Status changed for: JID: $myjid" >> $logfile
+                  #echo "" ; echo "`date`: $jid_out"
+                  echo "`date`: $jid_out" >> $logfile
+                  result="not_running"
+              fi
+          done
+    else
+        echo "Status changed for: JID: $myjid" >>  $logfile
+        #echo "" ; echo "`date`: $jid_out"
+        echo "`date`: $jid_out" >> $logfile
+    fi
+
+    out2=$(grep  state $logfile | grep $master )
+    if [[ "$?" = 0 ]]; then
+        echo $out2 | grep -qi complete
+        if [[ "$?" = 0 ]]; then
+           echo "Finish: `date`"
+           echo "$master complete"
+           echo "`date`: $master complete" >> $logfile
+         else
+           echo "" ; echo -e "${Red} $master NOT done...Exiting ${White}" 
+           echo "`date`: $master not done...Exiting" >> $logfile
+           echo "${this_script}: Failed to run on $master" | mailx -s "${this_script}: Failed to run on $master" ${users_list}
+           exit 1
+        fi
+    else
+       echo "" ; echo -e "${Red} ERROR: $master didn't run the state...Exiting  ${White}"
+       echo "`date`: $master didn't run the state...Exiting"  | tee -a $logfile
+       echo "${this_script}: Failed to run on $master" | mailx -s "${this_script}: Failed to run on $master" ${users_list}
+       exit 1
+    fi
+
+
+    jid_output=$(check_jid_output $myjid )
+    #echo $jid_output 
+    echo "Salt Apply Output:"  >>  $logfile
+    echo $jid_output | /usr/local/bin/jq >>  $logfile
+    echo $jid_output | grep -q "result"
+    if [[ "$?" != 0 ]]; then
+      echo "`date`: Error while applying salt state: " | tee -a $logfile
+      echo "$jid_output" | grep -q "error" >> $logfile
+      { 
+        echo "   JID:${myjid}" ; echo "$jid_output" 
+      } | mailx -s "${this_script}: env(${env_}): Error to apply state on $master" ${users_list}
+      exit 1
+    else
+       echo "`date`: Salt Apply Result:"  >>  $logfile
+       echo $jid_output | python -m json.tool | egrep "__id__|result" >> $logfile
+       { 
+          echo "     JID:${myjid}     USER:${user_}"   ; echo "" 
+          echo "$jid_output" |  python -m json.tool | egrep "__id__|result" 
+       } | mailx -s "${this_script}: env(${env_})  Result on $master" ${users_list}
+    fi
+
+   done

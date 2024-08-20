@@ -1,0 +1,116 @@
+#!/bin/bash
+# Procedure to add/expand 2x1.5TB SSDs to /opt/splunkindexhot_data
+# Current Virtual Disks on Index Cluster Peers
+#----------------------------------------------------------
+#DG/VD TYPE  State Access Consist Cache sCC      Size Name
+#----------------------------------------------------------
+#0/0   RAID1 Optl  RW     Yes     NRWBD -    223.0 GB sda
+#1/2   RAID1 Optl  RW     Yes     NRWBD -    1.454 TB sdc
+#2/1   RAID5 Optl  RW     Yes     RWBD  -   14.731 TB
+#----------------------------------------------------------
+# This is the works on adding virtual SSD (v2) and changing from RAID1 to RAID6
+# LVM information
+# Volume Group: hotvg
+# Logical Volume: hot_lvm1
+# Virtual Physical Drive: /dev/sdc1
+# TOPOLOGY :
+#-------------------------------------------------------------------------
+#DG Arr Row EID:Slot DID Type  State BT      Size PDC  PI SED DS3  FSpace
+#-------------------------------------------------------------------------
+# 1 0   0   32:0     0   DRIVE Onln  N   1.454 TB dflt N  N   dflt -
+# 1 0   1   32:1     1   DRIVE Onln  N   1.454 TB dflt N  N   dflt -
+#
+# New SSDs will be added to slot 13 and 14
+# 1 0   0   32:13     0   DRIVE Onln  N   1.454 TB dflt N  N   dflt -
+# 1 0   1   32:14     1   DRIVE Onln  N   1.454 TB dflt N  N   dflt -
+
+# By user1 P. user1 | TOS
+SPLUNK_HOT=/opt/splunkindexhot_data
+SPLUNK_COLD=/opt/splunkindex_data
+SSD_BACKUP=${SPLUNK_COLD}/SSD_BACKUP
+
+
+[[ ! -d $SSD_BACKUP ]] && mkdir -p $SSD_BACKUP
+
+# 1. Stop Splunk
+# service splunk stop
+
+# 2. Backup $SPLUNK_HOT to $SSD_BACKUP
+grep '/opt/splunkindexhot_data' /etc/mtab >/dev/null
+
+if [[ "$?" = "0" ]]
+then
+   cd ${SPLUNK_HOT} && find . |cpio -pdm $SSD_BACKUP
+   echo
+   echo "#####################################################"
+   echo "List of ${SPLUNK_HOT} apps copied to ${SSD_BACKUP}:"
+   echo "#####################################################"
+   echo "Total size of ${SSD_BACKUP}:
+   du -hs $SSD_BACKUP
+
+else
+   echo "${SPLUNK_HOT} is not mounting. Abort"
+   exit 1
+fi
+ 
+# 3. Unmount $SPLUNK_HOT and remove its current RAID configuration
+umount -l $SPLUNK_HOT
+grep '/opt/splunkindexhot_data' /etc/mtab >/dev/null
+if [[ "$?" != "0" ]]
+then
+   # Remove LVM: hot_lvm1, hotvg, and /dev/sdc1
+   lvs|grep hot_lvm1 >/dev/null
+   if [[ "$?" = "0" ]]
+   then
+      echo "Removing hot_lvm1"
+      lvremove -f hotvg/hot_lvm1 && vgremove -f hotvg && pvremove -ff /dev/sdc1
+      echo "Delete virtual drive: v1"
+      perccli /c0/vall show
+      # Now remove it
+      perccli /c0/v1 del force
+      # Verify
+      perccli /c0/vall show
+   else
+      echo "LVM: Logical VOlume hot_lvm1 does not exist. Abort"
+      exit 2
+   fi
+else
+   echo "/opt/splunkindexhot_data is still mounting. Abort."
+   exit 3
+fi
+
+# 4. Recreate hot_lvm1, hotvg, and /dev/sdc1
+# Create virtual disk RAID6 (slots:0,1,13,14) via perccli
+perccli /c0 add vd type=raid6 drives=32:0-1,13-14
+# Verify
+perccli /c0/vall show|egrep '^-|^DG|RAID'
+# Format virtual disk
+echo "Below is current virtual disks:"
+echo
+fdisk -l|grep 'dev/sd'|grep '^Disk'
+echo
+echo -n "Which virtual disk? "
+read DISK
+parted -s ${DISK} mklabel gpt
+parted -s -- ${DISK} unit TB mkpart primary ext4 0% 100%
+partprobe ${DISK}
+pvcreate ${DISK}1
+echo
+# Verify
+pvs
+# Create hotvg and hot_lvm1
+vgcreate hotvg ${DISK}1
+lvcreate -l 100%FREE -n hot_lvm1 hotvg
+# verify
+echo
+# Mount ${SPLUNK_HOT}
+mount ${SPLUNK_HOT}
+
+# 5. Copy ${SSD_BACKUP} to ${SPLUNK_HOT}
+cd ${SSD_BACKUP} && find .|cpio -pdmv ${SPLUNK_HOT}
+
+# 6. Start Splunk
+# service splunk start
+
+
+

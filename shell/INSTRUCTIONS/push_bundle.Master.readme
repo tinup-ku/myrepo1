@@ -1,0 +1,44 @@
+
+Before pushing updated/new bundles from Cluster Master to 120 Indexers, perform the followings
+
+1. On Splunk control server, svm4189cdc, verify there's no issue with NFS NAS /ELI
+
+As root,
+jldsh -eg All_Indexers_cluster -s /root/scripts/check_NAS
+
+If issue, output will show
+
+indexer_name: Problem with NAS /ELI
+
+Remediation:
+
+- From control server, remote into ${indexer_name}. As root,
+  o Determine all NAS NFS mount points
+    grep nfs /etc/mtab|grep -v sunrpc|awk '{print $2}'
+
+  o Force unmount all NFS mount points from above result
+
+    umount -l ${mount_point_above}
+
+  o Restart NFS automounter
+    systemctl restart autofs.service
+
+  o Verify NFS automounter
+    systemctl status autofs.service
+
+2. On Splunk Index Cluster Master, svm0859cdc, as Splunk service account, svc.eli_admin.prod
+
+TO BE CONTINUED:
+$ pwd
+/svc.eli_admin.prod
+$ ls -ltr
+total 8
+-rwxr-xr-x 1 svc.eli_admin.prod unx_9998_access 158 Jan 10  2018 remove_peers_GUID
+-rwxr-xr-x 1 svc.eli_admin.prod unx_9998_access 423 Nov 19 16:58 check_cluster-bundle-status
+
+
+
+
+
+
+
