@@ -1,2 +1,0 @@
-splunk edit cluster-config -mode slave -master_uri https://10.160.31.200:8089 -replication_port 9887 -secret your_key
-
