@@ -1,0 +1,448 @@
+#!/bin/bash
+PATH=/bin:/sbin
+BACKUP_LOCATION="/root/mycorp-ks/backups"
+LOG_LOCATION="/root/mycorp-ks/logs"
+LOG_FILE="$LOG_LOCATION/fix_ssh_ciphers.log"
+
+POLICY_NAME="com1_POLICY"
+function usage {
+	echo ""
+	echo "Usage :"
+	echo "		$0 -d   --- Display the current config"
+	echo "		$0 -r   --- Remediate or correct the configuration"
+	echo "		$0 -b   --- Backout remediation"
+	echo ""
+}
+
+while getopts "drb" arg; do
+case $arg in
+        d)
+          CLIENT_CONF=/etc/ssh/ssh_config
+          SERVER_CONF=/etc/ssh/sshd_config
+          REMEDIATE=false
+	  OPERATION="Display"
+          ;;
+        r)
+          CLIENT_CONF=/etc/ssh/ssh_config
+          SERVER_CONF=/etc/ssh/sshd_config
+          REMEDIATE=true
+	  OPERATION="Remediation"
+	  ;;
+	b) 
+	  CLIENT_CONF=/etc/ssh/ssh_config
+          SERVER_CONF=/etc/ssh/sshd_config
+	  BACKOUT=true
+	  OPERATION="Backout"
+          ;;
+        *)
+          usage
+          exit
+          ;;
+        /?)
+          echo -e "Unknown option\n"
+          usage
+          exit
+          ;;
+esac
+done
+
+if (( OPTIND == 1)); then
+  echo -e "No options specified\n"
+  usage
+  exit
+fi  
+
+
+backup_file() {
+    local src_files=$1
+    local dest_dir=$2
+    local counter
+    local file_name
+    local dest_file
+    local orig_file_created=false
+
+    for src_file in $src_files; do
+        if [[ ! -f "$src_file" ]]; then
+            echo "Source file does not exist: $src_file"
+            continue  # Skip to the next file
+        fi
+
+        file_name=$(basename "$src_file")
+        counter=1
+
+        # Check for existing numbered backups
+        while [[ -f "$dest_dir/$file_name.$counter" ]]; do
+            ((counter++))
+        done
+
+        dest_file="$dest_dir/$file_name.$counter"
+
+        # If no numbered backups exist, create a .orig backup
+        if [[ $counter -eq 1 && ! -f "$dest_dir/$file_name.orig" ]]; then
+            cp "$src_file" "$dest_dir/$file_name.orig"
+            echo "Original backup created: $dest_dir/$file_name.orig"
+            orig_file_created=true
+        fi
+
+        # Copy the file with enumeration
+        cp "$src_file" "$dest_file"
+        echo "Backup created: $dest_file"
+
+        # If a .orig file was not created and counter is 1, create a .orig as well
+        if [[ $orig_file_created == false && $counter -eq 1 ]]; then
+            cp "$src_file" "$dest_dir/$file_name.orig"
+            echo "Original backup created: $dest_dir/$file_name.orig"
+        fi
+    done
+}
+
+
+
+restore_latest_backup() {
+    local backup_base=$1    # Base path of the backup files
+    local base_name=$2      # Base name of the file to be restored
+    local restore_to=$3     # Destination path for restoring the file
+    local orig_backup="$backup_base/$base_name.orig"
+    local latest_backup=""
+    local highest_num=0
+    local number
+
+    # Check if .orig backup exists
+    if [[ -f "$orig_backup" ]]; then
+        cp "$orig_backup" "$restore_to"
+        echo "Restored original backup $orig_backup to $restore_to"
+        return 0
+    fi
+
+    shopt -s nullglob  # Enable nullglob to handle the case where no files are found
+
+    # Find the latest backup file with a numeric extension
+    for file in "$backup_base/$base_name".*; do
+        if [[ -f "$file" ]]; then
+            number=$(basename "$file" | grep -o -E '[0-9]+$')
+            if [[ "$number" =~ ^[0-9]+$ ]] && ((number > highest_num)); then
+                highest_num=$number
+                latest_backup=$file
+            fi
+        fi
+    done
+
+    shopt -u nullglob  # Disable nullglob
+
+    # Check if a numeric backup was found
+    if [[ -z "$latest_backup" ]]; then
+        echo "No backup found for $base_name in $backup_base"
+        return 1
+    fi
+
+    # Restore the latest numeric backup
+    cp "$latest_backup" "$restore_to"
+    echo "Restored $latest_backup to $restore_to"
+}
+
+validate() {
+    sshd_config_check="SSHD configuration"
+    sshd_service_check="SSHD service"
+
+    sshd -t >/dev/null 2>&1
+    sshd_config_status=$?
+
+    systemctl is-active --quiet sshd
+    sshd_active_status=$?
+
+    case "${sshd_config_status}_${sshd_active_status}" in
+        0_0)
+            echo "$sshd_config_check is valid."
+            echo "$sshd_service_check is active."
+	    return 0
+            ;;
+        0_*)
+            echo "$sshd_config_check is valid."
+            echo "$sshd_service_check is not active."
+  	    return 1
+            ;;
+        *_0)
+            echo "$sshd_config_check is not valid."
+            echo "$sshd_service_check is active."
+	    return 2
+            ;;
+        *)
+            echo "$sshd_config_check is not valid."
+            echo "$sshd_service_check is not active."
+	    return 3
+            ;;
+    esac
+}
+
+
+function show_config_rhel7 {
+        echo -e "\nSSH server settings ($SERVER_CONF):\n"
+        #sshd -t -f $SERVER_CONF || echo -e "\nERROR in config\n"
+        result=$(sshd -t -f $SERVER_CONF 2>&1); [ ! -z "$result" ] && echo "ERROR in config : $result"
+        sshd -T -f $SERVER_CONF | egrep -i '^ciphers|^kex|^macs|^hostkey' | sed -e 's/ /: /' -e 's/,/ | /g' | awk '{$1=toupper($1); print}' | grep --color '|'
+#        echo -e "\nSSH client settings:\n"
+#        for a in cipher cipher-auth mac key kex key-cert key-plain
+#        do
+#                ssh -Q $a | xargs echo ${a^^}: | sed 's/[^:] /&| /g' | grep --color '|'
+#        done
+        echo
+}
+
+function show_config_rhel8 {
+        echo -ne "\nCrypto policy:  "
+        update-crypto-policies --show
+        echo -e "\nSSH server settings:\n"
+        source /etc/crypto-policies/back-ends/opensshserver.config
+        source /etc/sysconfig/sshd
+        sshd -t $OPTIONS $CRYPTO_POLICY || echo -e "\nERROR in config\n"
+        sshd -T $OPTIONS $CRYPTO_POLICY | egrep -i '^ciphers|^kex|^macs' | sed 's/,/ | /g' | awk '{$1=toupper($1); print}'
+#        sshd -T -f $SERVER_CONF | egrep -i '^ciphers|^kex|^macs' | sed 's/,/ | /g'
+#        #echo -e "\nSSH client settings:\n"
+#        for a in cipher mac key kex kex-gss key-cert key-plain sig
+#        do
+#                ssh -Q $a | xargs echo ${a^^}: | sed 's/[^:] /&| /g' | grep --color '|'
+#        done
+        echo
+}
+
+function show_config_rhel9 {
+        echo -ne "\nCrypto policy:  "
+        update-crypto-policies --show
+        echo -e "\nSSH server settings:\n"
+	source /etc/sysconfig/sshd
+	while IFS=' ' read -r key values; do
+
+		# Remove spaces after comas
+		values_cleaned=$(echo "$values" | tr -d ' ')
+
+		#Export the variable
+		eval "export $key=\"$values_cleaned\""
+
+	done < /etc/crypto-policies/back-ends/opensshserver.config
+	
+	source /etc/sysconfig/sshd
+
+        sshd -t $OPTIONS $CRYPTO_POLICY || echo -e "\nERROR in config\n"
+        sshd -T $OPTIONS $CRYPTO_POLICY | egrep -i '^ciphers|^kex|^macs' | sed 's/,/ | /g' | awk '{$1=toupper($1); print}'
+        sshd -T -f $SERVER_CONF | egrep -i '^ciphers|^kex|^macs' | sed 's/,/ | /g'
+        echo -e "\nSSH client settings:\n"
+        for a in cipher mac key kex kex-gss key-cert key-plain sig
+        do
+                ssh -Q $a | xargs echo ${a^^}: | sed 's/[^:] /&| /g' | grep --color '|'
+        done
+        echo
+}
+
+
+function backout {
+	case $OS_MR in
+		7) restore_latest_backup "$BACKUP_LOCATION" "$(basename $CLIENT_CONF)" "$CLIENT_CONF"
+		   restore_latest_backup "$BACKUP_LOCATION" "$(basename $SERVER_CONF)" "$SERVER_CONF"
+		   restore_latest_backup "$BACKUP_LOCATION" "ssh_host_dsa_key" "/etc/ssh/ssh_host_dsa_key"
+   		   restore_latest_backup "$BACKUP_LOCATION" "ssh_host_dsa_key.pub" "/etc/ssh/ssh_host_dsa_key.pub"
+		   ;;
+			
+		8|9) backup_file "/etc/crypto-policies/policies/modules/$POLICY_NAME.pmod" "$BACKUP_LOCATION"
+                     restore_latest_backup "$BACKUP_LOCATION" "ssh_host_dsa_key" "/etc/ssh/ssh_host_dsa_key"
+                     restore_latest_backup "$BACKUP_LOCATION" "ssh_host_dsa_key.pub" "/etc/ssh/ssh_host_dsa_key.pub"
+                     restore_latest_backup "$BACKUP_LOCATION" "$(basename $CLIENT_CONF)" "$CLIENT_CONF"
+                     restore_latest_backup "$BACKUP_LOCATION" "$(basename $SERVER_CONF)" "$SERVER_CONF"
+		     rm -f /etc/crypto-policies/policies/modules/$POLICY_NAME.pmod
+		     update-crypto-policies --set DEFAULT
+		   ;;
+	esac
+	
+}
+
+function fix_rhel6 {
+        [ $REMEDIATE = "true" ] || return 1
+        echo -e "\nRHEL 6 Cipher Remediation\n"
+}
+
+
+
+function check_rhel7_cipher_count {
+	 CIPHERS_COUNT=$(grep -ic ^Ciphers       $SERVER_CONF)
+        ## Exit if count is not 1 for CIPHERS line is found
+        if [ $CIPHERS_COUNT != 1 ]; then
+         echo "[x] Fail: Config issue detected, It seems like the sshd_config file is not standard, Pls remediate manually: Kex: $KEXALGO_COUNT - Cipher: $CIPHERS_COUNT - Exiting"
+         echo "Manual Intervention: For RHEL 7 these are the enteries that are expected in the /etc/ssh/sshd_config file by Security Compliance. Kindly update the file manually as follows and restart sshd:"
+         echo
+         echo "Ciphers aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com"
+         echo "HostkeyAlgorithms ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa"
+         echo "Kexalgorithms ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256"
+         echo "Macs umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512"
+  	exit 4
+	fi
+
+}
+
+function fix_rhel7 {
+        echo -e "\nRHEL 7 Cipher Remediation\n"
+        echo -e "\nBacking up config files ..."
+	backup_file "$CLIENT_CONF" "$BACKUP_LOCATION"
+	backup_file "$SERVER_CONF" "$BACKUP_LOCATION"
+        
+        echo -e "Removing DSA keys ..."
+        sed -i -e 's/^HostKey.*ssh_host_dsa_key/#&/I' $SERVER_CONF
+	sed -i -e "/^#HostKey \/etc\/ssh\/ssh_host_dsa_key/d" $SERVER_CONF 
+	export -f backup_file
+	
+	shopt -s nullglob
+	ls /etc/ssh/ssh_host_dsa_key{,.pub} 2>/dev/null | xargs -I {} -r bash -c 'backup_file "$0" "'"$BACKUP_LOCATION"'"' {}
+	ls /etc/ssh/ssh_host_dsa_key{,.pub} 2>/dev/null | xargs -r rm
+	shopt -u nullglob
+
+	for key in ecdsa ed25519
+	do
+		[ ! -f "/etc/ssh/ssh_host_${key}_key" ] && (echo "Creating new ${key} key ..."; ssh-keygen -t $key -f /etc/ssh/ssh_host_${key}_key -N "") || echo "${key} already exists ..."
+
+		echo -e "Ensure $key keys ..."
+		sed -i \
+		-e "/^#HostKey \/etc\/ssh\/ssh_host_${key}_key/d" \
+		-e "/^HostKey \/etc\/ssh\/ssh_host_${key}_key/d" \
+                -e "/^HostKey \/etc\/ssh\/ssh_host_rsa_key/a HostKey \/etc\/ssh\/ssh_host_${key}_key" $SERVER_CONF
+	done
+#  Pavan- Check for existence of Ciphers or bail with the message- Non Standard sshd_config file
+        echo -e "Updating ciphers ..."
+        sed -i -e '/^Ciphers/Ic\Ciphers aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com' $SERVER_CONF
+        
+        echo -e "Updating MACs ..."
+        sed -i -e '/^MACs /Id' -e '/^ciphers/I a\'$'\n''Macs umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512' $SERVER_CONF
+        
+        echo -e "Updating key exchange algorithms ..."
+	sed -i -e '/^kexalgorithms /Id' -e '/^Ciphers/I a\'$'\n''Kexalgorithms ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256' $SERVER_CONF
+ 
+        echo -e "Updating host key algorithms ..."
+        sed -i -e '/^hostkeyalgorithms /Id' -e '/^Ciphers/I a\'$'\n''HostkeyAlgorithms ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa' $SERVER_CONF
+}
+
+function fix_rhel8 {
+        echo -e "\nRHEL 8 Cipher Remediation\n"
+        echo -e "Removing DSA keys ..."
+        sed -i -e 's/^HostKey.*ssh_host_dsa_key/#&/I' $SERVER_CONF
+	export -f backup_file
+        ls /etc/ssh/ssh_host_dsa_key{,.pub} 2>/dev/null | xargs -I {} -r bash -c 'backup_file "$0" "'"$BACKUP_LOCATION"'"' {}
+        ls /etc/ssh/ssh_host_dsa_key{,.pub} 2>/dev/null | xargs -r rm
+        backup_file "$CLIENT_CONF" "$BACKUP_LOCATION"
+        backup_file "$SERVER_CONF" "$BACKUP_LOCATION"
+	backup_file "/etc/crypto-policies/state/CURRENT.pol" "$BACKUP_LOCATION"
+	backup_file "/etc/crypto-policies/state/current" "$BACKUP_LOCATION"
+	echo -e "# Disable all CBC cipher, HMAC, and UMAC for SSH
+                 # cipher@openssh-server = -*-CBC 
+                cipher@openssh-server = -*-CBC -CHACHA20-*
+                mac@openssh-server = -HMAC-SHA1* -UMAC-*
+                hash@openssh-server = -SHA1
+                sign@openssh-server = -RSA-SHA1
+                ssh_etm = 0" | sed 's/^[ \t]*//'  > /etc/crypto-policies/policies/modules/$POLICY_NAME.pmod
+        update-crypto-policies --set DEFAULT:$POLICY_NAME
+}
+
+function fix_rhel9 {
+        echo -e "\nRHEL 9 Cipher Remediation\n"
+        backup_file "$CLIENT_CONF" "$BACKUP_LOCATION"
+        backup_file "$SERVER_CONF" "$BACKUP_LOCATION"
+        backup_file "/etc/crypto-policies/state/CURRENT.pol" "$BACKUP_LOCATION"
+        backup_file "/etc/crypto-policies/state/current" "$BACKUP_LOCATION"
+       echo -e "# Disable all CBC cipher, HMAC, and UMAC for SSH
+                # cipher@openssh-server = -*-CBC
+                cipher@openssh-server = -*-CBC -CHACHA20-*
+                mac@openssh-server = -HMAC-SHA1* -UMAC-*
+                ssh_etm = 0"  | sed 's/^[ \t]*//'  > /etc/crypto-policies/policies/modules/$POLICY_NAME.pmod
+        update-crypto-policies --set DEFAULT:$POLICY_NAME
+}
+
+
+function processFix {
+        local fixCommand="$1"
+        local showCommand="$2"
+        local before
+        local after
+        local difference
+
+	echo "$(basename $0)"
+	echo "--------------------"
+        echo
+        echo "Client config    : $CLIENT_CONF"
+        echo "Server config    : $SERVER_CONF"
+        echo "Backup Location  : $BACKUP_LOCATION"
+        echo "Log File         : $LOG_FILE"
+	echo "Operation        : $OPERATION"
+        echo
+
+        if [[ "$REMEDIATE" == "true" || "$BACKOUT" == "true" ]]; then
+                before=$($showCommand)
+		echo ""
+                echo "Before $OPERATION" 
+                echo "------------------"
+		echo ""
+                echo -e "$before"
+                echo ""
+		if [[ $BACKOUT == "true" ]] ; then 
+			backout
+		else
+			$fixCommand
+		fi
+                after=$($showCommand)
+		echo ""
+                echo "After $OPERATION"
+                echo "------------------"
+		echo ""
+                echo -e "$after"
+                echo ""
+                difference=$( diff <(echo "$before") <(echo "$after"))
+                if [ -n "$difference" ]; then
+			echo ""
+                        echo "What changed [<]=before, [>]=after"
+                                echo "------------------"
+				echo ""
+                                echo -e "$difference"
+                        fi
+	else
+        	$showCommand
+        fi
+}
+
+
+
+function main() {
+	[[ $(sysctl -n crypto.fips_enabled) -eq 1 ]] && echo "Fips mode enabled, modify manually." && exit
+	OS_MR=$(/usr/sbin/subscription-manager facts|awk '$1 == "distribution.version:" {print $2}'|cut -c1)
+
+
+	case $OS_MR in
+        	9)
+	                processFix "fix_rhel9" "show_config_rhel9"
+		;;
+        	8)
+                	processFix "fix_rhel8" "show_config_rhel8"
+                ;;
+        	7)
+			check_rhel7_cipher_count 
+                	processFix "fix_rhel7" "show_config_rhel7"
+                ;;
+        	6)
+                	fix_rhel6 ;;
+	        *)
+        	        echo -e "\nERROR: Unknown version\n"
+                	exit 2
+                ;;
+	esac
+	
+	[[ "$REMEDIATE" == "true" || "$BACKOUT" == "true" ]] && echo -e "\nRestarting SSH\n--------------" && systemctl restart sshd && systemctl status sshd
+
+	validate
+	validate_status=$?
+	case $validate_status in 
+	    1|2|3 ) [[ "$REMEDIATE" == "true" ]] &&  echo "SSHD configuration is invalid or the SSHD service is not enabled,  backing out updates." &&  backout;;
+	esac 
+
+	echo -e "\n$OPERATION is complete"
+	return $validate_status
+
+}
+
+[ ! -d "$BACKUP_LOCATION" ] && mkdir -p "$BACKUP_LOCATION"
+[ ! -d "$LOG_LOCATION" ] && mkdir -p "$LOG_LOCATION"
+[ -f "$LOG_FILE" ] && [ "$OPERATION" != "Display" ] && backup_file "$LOG_FILE" "$LOG_LOCATION"
+main |  /usr/bin/tee "$LOG_FILE"

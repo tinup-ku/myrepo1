@@ -1,0 +1,5 @@
+#!/bin/ksh
+systemctl daemon-reload
+systemctl enable Splunkd.service
+sleep 2s
+systemctl start Splunkd.service
