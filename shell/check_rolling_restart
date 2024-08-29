@@ -1,0 +1,3 @@
+#!/bin/ksh
+
+su - svc_act1 -c "/opt/splunk/bin/splunk login -auth admin:`uname -n`_admin; /opt/splunk/bin/splunk rolling-restart shcluster-members -status 1"

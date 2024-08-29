@@ -1,0 +1,49 @@
+#!/bin/bash
+##############################################################################
+# https://jiradomain1/browse/TOS-14290
+# Background:
+# 1. /opt/splunk/var/run/splunk/snapshot/*.bundle taking lots of disk space
+#    due to large users/apps .csv lookups have negative impact on SH cluster.
+# 
+# 2. ${SPLUNK_BIN}/splunk cmd splunkd clean-dispatch /tmp -24@h
+#    doesn't work due to
+# --------------------
+# https://community.splunk.com/t5/Deployment-Architecture/Is-it-best-practice-to-clear-the-entire-dispatch-directory-when/m-p/225632 
+# --------------------
+# The recommendation,
+# https://community.splunk.com/t5/Splunk-Search/Dispatch-directory-is-full-How-do-we-clear-it-up/td-p/283206
+##############################################################################
+# user_ | Team
+SNAP_SHOT=/opt/splunk/var/run/splunk/snapshot
+DISPATCH=/opt/splunk/var/run/splunk/dispatch
+date_=$(date '+%a%H%M_%m%d%Y')
+ 
+{
+
+cd ${DISPATCH} && {
+      # Identify splunk artifacts older than 1 day
+      echo
+      case $1 in
+        -list )
+                total_files=$(find 2>/dev/null|wc -l)
+                total_artifacts=$(ls|wc -l)
+                echo "${DISPATCH}: Total ${total_artifacts} artifacts"
+                find .  -maxdepth 1 -type d  -path ./_splunktemps -prune -o ! -mmin -15 -exec ls -ld {} + >/tmp/$$ 2>&1
+                find .  -maxdepth 1 -type d  -path ./_splunktemps -prune -o ! -mmin -15 -exec ls -lR {} + >/tmp/file_$$ 2>&1
+                artifacts=$(wc -l < /tmp/$$)
+                files_=$(wc -l < /tmp/file_$$)
+                echo "List of splunk ${artifacts} artifacts ($files_ out of total $total_files files) older than 1 day need to clean up: /tmp/$$"
+                echo
+                ;;
+        -clean )
+                # Clean up splunk search artifacts older than 1 day"
+                find . -maxdepth 1 -type d  -path ./_splunktemps -prune -o ! -mmin -15 -exec rm -rf {} + >/dev/null 2>&1
+                echo
+                ;;
+             * )
+                echo "Usage: $0 [-clean|-list]"
+                exit 1
+                ;;
+       esac
+}
+} | tee /tmp/clean_dispatch_$1_${date_}.out
